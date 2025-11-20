@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hand-Slap Table Tennis — CV Controlled (Single File)</title>
+<style>
+  :root{--bg:#071228;--panel:#0f1724;--accent:#00d1ff;--muted:#9aa8b6}
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,arial,sans-serif;background:var(--bg);color:#e6f2ff}
+  .wrap{display:flex;gap:16px;align-items:flex-start;padding:18px;box-sizing:border-box}
+  canvas{background:linear-gradient(180deg,#08314a 0%, #071228 100%);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.6)}
+  #ui{width:360px}
+  .card{background:var(--panel);padding:14px;border-radius:10px;color:#dff6ff;margin-bottom:14px}
+  h1{margin:0 0 8px 0;font-size:18px}
+  .small{font-size:13px;color:var(--muted)}
+  button{background:var(--accent);border:0;padding:8px 12px;border-radius:8px;color:#002329;font-weight:600;cursor:pointer}
+  .row{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .muted{color:var(--muted);font-size:13px}
+  .debug {font-family:monospace;background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;margin-top:8px}
+  a{color:var(--accent)}
+  footer{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <canvas id="game" width="960" height="560"></canvas>
+  </div>
+
+  <div id="ui">
+    <div class="card">
+      <h1>Hand-Slap Table Tennis</h1>
+      <div class="small">Control left paddle with your hand. Move your palm up/down to track paddle. Make a short fast forward/right motion (slap) to hit the ball.</div>
+
+      <div class="row">
+        <button id="startBtn">Start Game</button>
+        <button id="resetBtn">Reset Scores</button>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <label class="muted">Slap sensitivity</label>
+        <input id="sensitivity" type="range" min="0.8" max="3.0" step="0.1" value="1.6" style="flex:1"/>
+      </div>
+
+      <div class="debug" id="debug">Loading camera...</div>
+      <footer>Uses MediaPipe Hands (client-side). Allow camera access. Works best in Chrome/Edge.</footer>
+    </div>
+
+    <div class="card">
+      <div class="small"><strong>Tips</strong></div>
+      <ul class="small" style="margin:8px 0 0 16px">
+        <li>Hold your hand roughly in the left half of the camera view (paddle area).</li>
+        <li>Move your palm up/down to control paddle position.</li>
+        <li>To hit, do a quick forward/right motion (a slap) — ball must be near paddle.</li>
+        <li>If detection is jittery, move slower or increase ambient light.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- MediaPipe (Hands + camera utils + drawing utils) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+/* ====== Game + MediaPipe in single HTML ======
+   - left paddle = player controlled by palm Y
+   - slap = detected by palm X velocity > threshold
+   - simple physics and AI opponent
+   - tuned for single-hand, desktop webcam
+*/
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', {alpha:false});
+const W = canvas.width, H = canvas.height;
+
+// UI elements
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+const debugEl = document.getElementById('debug');
+const sensitivityEl = document.getElementById('sensitivity');
+
+let running = false;
+let camera=null;
+
+// ---------- Game state ----------
+const paddleW = 12, paddleH = 110;
+const player = {x: 40, y: H/2 - paddleH/2, w: paddleW, h: paddleH};
+const ai = {x: W-40-paddleW, y: H/2 - paddleH/2, w: paddleW, h: paddleH, speed: 4.2};
+
+let ball = {x: W/2, y: H/2, r: 10, vx: 6*(Math.random()>0.5?1:-1), vy: 2*(Math.random()>0.5?1:-1)};
+let score = {player: 0, ai: 0};
+
+// ---------- MediaPipe Hands ----------
+const video = document.createElement('video');
+video.style.display='none';
+video.width = 640; video.height = 480;
+document.body.appendChild(video);
+
+let lastPalm = null;     // {x,y,t}
+let palm = {x:0,y:0};    // in screen coords relative to canvas
+let palmVel = {x:0,y:0}; // px per second
+let lastTime = performance.now();
+
+// Helper: convert normalized (0..1) landmark coords to canvas pixels (flip X because webcam mirror)
+function normToCanvas(nx, ny) {
+  // nx,ny from MediaPipe: 0 left -> 1 right (camera image). We'll mirror so movement is natural.
+  // Mirror X so user's left-right feels natural.
+  const x = W - nx * W;
+  const y = ny * H;
+  return {x,y};
+}
+
+// Start MediaPipe Hands
+const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.6
+});
+hands.onResults(onHandsResults);
+
+// Camera utils
+camera = new Camera(video, {
+  onFrame: async () => { await hands.send({image: video}); },
+  width: 640,
+  height: 480
+});
+
+// ---------- Hand processing ----------
+function onHandsResults(results) {
+  const now = performance.now();
+  const dt = Math.max(1, now - lastTime); // ms
+  lastTime = now;
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const lm = results.multiHandLandmarks[0];
+
+    // Choose palm center: average of wrist (0) and middle finger mcp (9) for stability
+    const cxN = (lm[0].x + lm[9].x) / 2;
+    const cyN = (lm[0].y + lm[9].y) / 2;
+    const p = normToCanvas(cxN, cyN);
+
+    // compute velocity px/sec
+    if (lastPalm) {
+      const dx = p.x - lastPalm.x;
+      const dy = p.y - lastPalm.y;
+      const vx = dx / (dt/1000);
+      const vy = dy / (dt/1000);
+      palmVel.x = vx;
+      palmVel.y = vy;
+    } else {
+      palmVel.x = 0; palmVel.y = 0;
+    }
+
+    palm.x = p.x;
+    palm.y = p.y;
+    lastPalm = {x: p.x, y: p.y};
+
+    // also determine if palm is 'open' vs fist lightly by using distance between index tip (8) and thumb tip (4)
+    const dThumbIndex = Math.hypot((lm[8].x - lm[4].x), (lm[8].y - lm[4].y)); // normalized
+    palm.openness = dThumbIndex;
+
+  } else {
+    // no hand detected
+    palmVel.x = 0; palmVel.y = 0;
+    lastPalm = null;
+  }
+
+  // update debug UI
+  updateDebug();
+}
+
+// ---------- Debug UI ----------
+function updateDebug() {
+  const s = `
+    <div style="font-size:13px"><strong>Palm</strong></div>
+    <div class="small">x: ${palm.x.toFixed(0)} px  y: ${palm.y.toFixed(0)} px</div>
+    <div class="small">vx: ${palmVel.x.toFixed(1)} px/s  vy: ${palmVel.y.toFixed(1)} px/s</div>
+    <div class="small">openness: ${ (palm.openness||0).toFixed(3) }</div>
+    <div style="margin-top:6px" class="muted">Slap threshold (positive X): ${sensitivityEl.value}</div>
+    <div style="margin-top:6px" class="muted">Player: ${score.player}  —  AI: ${score.ai}</div>
+  `;
+  debugEl.innerHTML = s;
+}
+
+// ---------- Game loop ----------
+function resetBall(servesToPlayer=true) {
+  ball.x = W/2; ball.y = H/2;
+  const angle = (Math.random()*Math.PI/4) - Math.PI/8; // small angle
+  const speed = 6 + Math.random()*2;
+  ball.vx = (servesToPlayer? -1:1) * speed * Math.cos(angle);
+  ball.vy = speed * Math.sin(angle);
+}
+
+function step() {
+  // if running, update physics
+  if (running) {
+    // Move player paddle using palm Y (if hand present)
+    if (lastPalm) {
+      // smooth follow to avoid jitter
+      const targetY = palm.y - player.h/2;
+      player.y += (targetY - player.y) * 0.28; // smoothing factor
+      // clamp
+      player.y = Math.max(8, Math.min(H - player.h - 8, player.y));
+    }
+
+    // simple AI: move toward ball Y
+    const targetAI = ball.y - ai.h/2;
+    const diff = targetAI - ai.y;
+    ai.y += Math.sign(diff) * Math.min(Math.abs(diff), ai.speed + Math.abs(ball.vx)*0.02);
+    ai.y = Math.max(8, Math.min(H - ai.h - 8, ai.y));
+
+    // Move ball
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // Collide top/bottom
+    if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -1; }
+    if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy *= -1; }
+
+    // Player paddle collision (simple AABB vs circle)
+    if (ball.x - ball.r < player.x + player.w) {
+      if (ball.y > player.y && ball.y < player.y + player.h) {
+        // check if slap gesture is happening strongly toward the right
+        const slapThreshold = parseFloat(sensitivityEl.value) * 800; // tuned scale
+        const isSlap = palmVel.x > slapThreshold && lastPalm && Math.abs(palm.y - (player.y + player.h/2)) < player.h*0.7;
+        // also allow weaker auto-hit if ball is very slow (makes it playable)
+        const autoHit = Math.abs(ball.vx) < 5;
+        if (isSlap || autoHit) {
+          // reflect ball
+          ball.x = player.x + player.w + ball.r + 1;
+          // Add horizontal velocity based on slap speed
+          const slapBoost = isSlap ? Math.min(1.6, palmVel.x / (slapThreshold*1.2)) : 1.0;
+          ball.vx = Math.abs(ball.vx) * (1 + 0.2*slapBoost) + 4 * slapBoost; // push rightwards
+          // vertical based on where it hit paddle
+          const rel = (ball.y - (player.y + player.h/2)) / (player.h/2);
+          ball.vy = rel * 6 + (Math.random()-0.5)*3;
+          // add tiny spin if slap had vertical component
+          ball.vy += palmVel.y * 0.002;
+        } else {
+          // if paddle area but no slap, bounce slightly (let it graze)
+          ball.x = player.x + player.w + ball.r + 1;
+          ball.vx = Math.abs(ball.vx) * 0.9; // dampen, nudged
+          ball.vx *= -1; // let it go back (simulate miss)
+        }
+      }
+    }
+
+    // AI paddle collision
+    if (ball.x + ball.r > ai.x) {
+      if (ball.y > ai.y && ball.y < ai.y + ai.h) {
+        ball.x = ai.x - ball.r - 1;
+        ball.vx = -Math.abs(ball.vx) * 1.02; // AI returns slightly faster over time
+        // vertical deflection based on hit spot
+        const rel = (ball.y - (ai.y + ai.h/2)) / (ai.h/2);
+        ball.vy = rel * 6 + (Math.random()-0.5)*3;
+      }
+    }
+
+    // Score out-of-bounds
+    if (ball.x < -30) { score.ai += 1; resetBall(false); }
+    if (ball.x > W + 30) { score.player += 1; resetBall(true); }
+  }
+
+  draw();
+  requestAnimationFrame(step);
+}
+
+// ---------- Drawing ----------
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  // background subtle grid
+  ctx.fillStyle = '#071228';
+  ctx.fillRect(0,0,W,H);
+
+  // net
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 2;
+  for (let y=10; y<H; y+=22) {
+    ctx.beginPath();
+    ctx.moveTo(W/2, y);
+    ctx.lineTo(W/2, y+12);
+    ctx.stroke();
+  }
+
+  // paddles
+  // player
+  ctx.fillStyle = '#00d1ff';
+  roundRect(ctx, player.x, player.y, player.w, player.h, 8, true);
+  // ai
+  ctx.fillStyle = '#ff8a00';
+  roundRect(ctx, ai.x, ai.y, ai.w, ai.h, 8, true);
+
+  // ball
+  ctx.beginPath();
+  ctx.fillStyle = '#fff';
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // Scores
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = '36px system-ui';
+  ctx.textAlign='center';
+  ctx.fillText(score.player, W*0.25, 60);
+  ctx.fillText(score.ai, W*0.75, 60);
+
+  // debug: draw palm and vector if available
+  if (lastPalm) {
+    ctx.strokeStyle = 'rgba(0,255,200,0.9)';
+    ctx.fillStyle = 'rgba(0,255,200,0.12)';
+    ctx.beginPath();
+    ctx.arc(palm.x, palm.y, 18, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // velocity arrow
+    ctx.beginPath();
+    ctx.moveTo(palm.x, palm.y);
+    ctx.lineTo(palm.x + palmVel.x*0.02, palm.y + palmVel.y*0.02);
+    ctx.strokeStyle = 'rgba(0,255,200,0.8)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // HUD small
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(6, H-46, 220, 38);
+  ctx.fillStyle = '#cfeff8';
+  ctx.font = '13px system-ui';
+  ctx.textAlign='left';
+  ctx.fillText('Move hand up/down to control paddle. Slap to hit.', 12, H-22);
+}
+
+function roundRect(ctx, x, y, w, h, r, fill) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  else ctx.stroke();
+}
+
+// ---------- Controls ----------
+startBtn.onclick = async () => {
+  if (!running) {
+    try {
+      await camera.start();
+      running = true;
+      startBtn.textContent = 'Pause';
+    } catch (e) {
+      alert('Camera start failed. Allow camera and reload the page. Error: '+e.message);
+      console.error(e);
+      return;
+    }
+  } else {
+    // pause
+    camera.stop();
+    running = false;
+    startBtn.textContent = 'Start Game';
+  }
+};
+
+resetBtn.onclick = () => {
+  score.player = 0; score.ai = 0;
+  resetBall(true);
+};
+
+// boot
+resetBall(true);
+requestAnimationFrame(step);
+
+// Attempt to auto-start camera permissions prompt (best-effort)
+(async function tryInitCamera(){
+  try {
+    await video.play().catch(()=>{});
+    // attach camera only on user gesture — but our Start button triggers it via Camera.start
+  } catch(e){}
+})();
+
+</script>
+</body>
+</html>
