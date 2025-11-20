@@ -3,115 +3,190 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Hand-Slap Table Tennis — CV Controlled (Single File)</title>
+<title>Neon 3D Hand-Slap Table Tennis (Single File)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <style>
-  :root{--bg:#071228;--panel:#0f1724;--accent:#00d1ff;--muted:#9aa8b6}
-  html,body{height:100%;margin:0;font-family:Inter,system-ui,arial,sans-serif;background:var(--bg);color:#e6f2ff}
-  .wrap{display:flex;gap:16px;align-items:flex-start;padding:18px;box-sizing:border-box}
-  canvas{background:linear-gradient(180deg,#08314a 0%, #071228 100%);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.6)}
+  :root{
+    --bg:#04060a; --panel:#071428; --neon-cyan:#00f0ff; --neon-pink:#ff2dd7; --muted:#8ea3b6;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:linear-gradient(180deg,#03060a 0%, #081025 100%);color:#e6f9ff}
+  .wrap{display:flex;gap:18px;align-items:flex-start;padding:20px;box-sizing:border-box;min-height:100vh}
+  .left {flex:1; display:flex;align-items:center;justify-content:center}
+  canvas{background:transparent;border-radius:14px;box-shadow: 0 20px 60px rgba(0,0,0,0.7);}
   #ui{width:360px}
-  .card{background:var(--panel);padding:14px;border-radius:10px;color:#dff6ff;margin-bottom:14px}
-  h1{margin:0 0 8px 0;font-size:18px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:14px; border-radius:12px; color:#dff6ff; margin-bottom:14px; box-shadow: 0 6px 18px rgba(0,0,0,0.6)}
+  h1{margin:0 0 8px 0;font-size:18px;letter-spacing:0.6px}
   .small{font-size:13px;color:var(--muted)}
-  button{background:var(--accent);border:0;padding:8px 12px;border-radius:8px;color:#002329;font-weight:600;cursor:pointer}
+  button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px 12px;border-radius:10px;color:var(--neon-cyan);font-weight:700;cursor:pointer;backdrop-filter: blur(6px)}
+  .btn-primary{background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink)); color:#001820; border:0; box-shadow: 0 8px 30px rgba(0,240,255,0.08); }
   .row{display:flex;gap:8px;align-items:center;margin-top:8px}
   .muted{color:var(--muted);font-size:13px}
-  .debug {font-family:monospace;background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;margin-top:8px}
-  a{color:var(--accent)}
+  .debug{font-family:monospace;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;margin-top:8px;color:#c9f6ff}
+  .center{display:flex;align-items:center;justify-content:center}
   footer{font-size:12px;color:var(--muted);margin-top:8px}
+  .score-target{display:flex;gap:12px;align-items:center;font-weight:800;font-size:14px}
+  .neon-pill{padding:8px 10px;border-radius:999px;background:linear-gradient(90deg, rgba(0,240,255,0.12), rgba(255,45,215,0.12));border:1px solid rgba(255,255,255,0.03)}
+  /* End screen */
+  .end-screen {
+    position: absolute;
+    inset:0;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+  }
+  .end-card {
+    pointer-events:auto;
+    width:680px;
+    max-width:92%;
+    padding:28px;
+    border-radius:16px;
+    text-align:center;
+    box-shadow:0 30px 100px rgba(0,0,0,0.6);
+    background:linear-gradient(180deg, rgba(8,15,30,0.7), rgba(2,6,12,0.6));
+    border:1px solid rgba(255,255,255,0.04);
+  }
+  .end-title {font-size:48px;line-height:1;color:var(--neon-cyan);text-shadow:0 6px 36px rgba(0,240,255,0.12)}
+  .end-sub {font-size:16px;color:var(--muted);margin-top:8px}
+  .glow-winner { color:var(--neon-cyan); text-shadow: 0 6px 40px rgba(0,240,255,0.14), 0 0 12px rgba(0,240,255,0.06); }
+  .glow-loser { color:var(--neon-pink); text-shadow: 0 6px 40px rgba(255,45,215,0.12), 0 0 14px rgba(255,45,215,0.06); }
+  .end-actions {display:flex;gap:10px;justify-content:center;margin-top:18px}
+  .small-muted{font-size:12px;color:rgba(255,255,255,0.6)}
+  /* responsive */
+  @media (max-width:980px){ .wrap{flex-direction:column;align-items:center} #ui{width:92%;} canvas{width:95vw;height:auto} }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div>
-    <canvas id="game" width="960" height="560"></canvas>
+  <div class="left">
+    <div style="position:relative">
+      <canvas id="game" width="1000" height="600"></canvas>
+
+      <!-- End screen overlay -->
+      <div id="endScreen" class="end-screen">
+        <div class="end-card" id="endCard">
+          <div id="endTitle" class="end-title">You Won!</div>
+          <div id="endSubtitle" class="end-sub">Score 15 reached — neon victory!</div>
+          <div class="end-actions">
+            <button id="playAgain" class="btn-primary">Play Again</button>
+            <button id="closeBtn">Close</button>
+          </div>
+          <div style="margin-top:10px" class="small-muted">Try again for a better score or change sensitivity.</div>
+        </div>
+      </div>
+
+    </div>
   </div>
 
   <div id="ui">
     <div class="card">
-      <h1>Hand-Slap Table Tennis</h1>
-      <div class="small">Control left paddle with your hand. Move your palm up/down to track paddle. Make a short fast forward/right motion (slap) to hit the ball.</div>
+      <h1>Neon 3D Hand-Slap Table Tennis</h1>
+      <div class="small">Control left paddle with your palm. Move palm up/down to position. Do a fast forward/right slap near the paddle to hit. Target score: <strong>15</strong>.</div>
 
-      <div class="row">
-        <button id="startBtn">Start Game</button>
+      <div class="row" style="margin-top:12px">
+        <button id="startBtn" class="btn-primary">Start Game</button>
         <button id="resetBtn">Reset Scores</button>
       </div>
 
       <div class="row" style="margin-top:12px">
         <label class="muted">Slap sensitivity</label>
-        <input id="sensitivity" type="range" min="0.8" max="3.0" step="0.1" value="1.6" style="flex:1"/>
+        <input id="sensitivity" type="range" min="0.6" max="3.0" step="0.05" value="1.6" style="flex:1"/>
+      </div>
+
+      <div style="margin-top:12px" class="score-target">
+        <div class="neon-pill">You: <span id="playerScore">0</span></div>
+        <div class="neon-pill">AI: <span id="aiScore">0</span></div>
+        <div class="neon-pill">Target: <strong>15</strong></div>
       </div>
 
       <div class="debug" id="debug">Loading camera...</div>
-      <footer>Uses MediaPipe Hands (client-side). Allow camera access. Works best in Chrome/Edge.</footer>
+      <footer>Uses MediaPipe Hands. Best in Chrome/Edge. Good lighting improves tracking.</footer>
     </div>
 
     <div class="card">
       <div class="small"><strong>Tips</strong></div>
       <ul class="small" style="margin:8px 0 0 16px">
-        <li>Hold your hand roughly in the left half of the camera view (paddle area).</li>
-        <li>Move your palm up/down to control paddle position.</li>
-        <li>To hit, do a quick forward/right motion (a slap) — ball must be near paddle.</li>
-        <li>If detection is jittery, move slower or increase ambient light.</li>
+        <li>Keep your hand in the left half of the camera view (approx).</li>
+        <li>Move palm vertically to control paddle. Slight smoothing applied.</li>
+        <li>Slap when the ball is low (near the table) for best hit—ball must be near table (z small).</li>
+        <li>Use the slider to tune slap strength.</li>
       </ul>
     </div>
   </div>
 </div>
 
-<!-- MediaPipe (Hands + camera utils + drawing utils) -->
+<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <script>
-/* ====== Game + MediaPipe in single HTML ======
-   - left paddle = player controlled by palm Y
-   - slap = detected by palm X velocity > threshold
-   - simple physics and AI opponent
-   - tuned for single-hand, desktop webcam
+/* Neon 3D Table Tennis
+   - Uses a faux-3D approach: ball has z (height above table)
+   - Ball scale & shadow change with z to create depth illusion
+   - Paddle is flat but glows neon; table has perspective gradient
+   - Target score of 15 -> end screen (win/lose)
+   - Slap detection: palmVel.x threshold; ball hittable only when near table (z < threshold)
 */
 
+// Canvas setup
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', {alpha:false});
+const ctx = canvas.getContext('2d', {alpha:true});
 const W = canvas.width, H = canvas.height;
 
 // UI elements
 const startBtn = document.getElementById('startBtn');
-const resetBtn = document.getElementById('resetBtn');
-const debugEl = document.getElementById('debug');
+const resetBtn  = document.getElementById('resetBtn');
+const debugEl   = document.getElementById('debug');
 const sensitivityEl = document.getElementById('sensitivity');
+const playerScoreEl = document.getElementById('playerScore');
+const aiScoreEl = document.getElementById('aiScore');
+
+const endScreen = document.getElementById('endScreen');
+const endTitle  = document.getElementById('endTitle');
+const endSubtitle= document.getElementById('endSubtitle');
+const playAgain = document.getElementById('playAgain');
+const closeBtn  = document.getElementById('closeBtn');
 
 let running = false;
-let camera=null;
 
-// ---------- Game state ----------
-const paddleW = 12, paddleH = 110;
-const player = {x: 40, y: H/2 - paddleH/2, w: paddleW, h: paddleH};
-const ai = {x: W-40-paddleW, y: H/2 - paddleH/2, w: paddleW, h: paddleH, speed: 4.2};
+// Game objects
+const paddleW = 18, paddleH = 120;
+const player = {x: 56, y: H/2 - paddleH/2, w: paddleW, h: paddleH};
+const ai = {x: W-56-paddleW, y: H/2 - paddleH/2, w: paddleW, h: paddleH, speed: 4.6};
 
-let ball = {x: W/2, y: H/2, r: 10, vx: 6*(Math.random()>0.5?1:-1), vy: 2*(Math.random()>0.5?1:-1)};
-let score = {player: 0, ai: 0};
+let ball = {
+  x: W/2, y: H/2, r: 12,
+  // faux-3D z axis (0 = on table surface; higher = mid-air)
+  z: 0, vz: 0,
+  vx: 6 * (Math.random()>0.5?1:-1),
+  vy: 1.5 * (Math.random()>0.5?1:-1),
+  spin: 0
+};
 
-// ---------- MediaPipe Hands ----------
+const gravity = -0.65; // negative because we treat z=0 table plane; vz positive = up
+const tableHeight = H*0.56; // Y coordinate of the table surface baseline
+
+let score = {player:0, ai:0};
+const TARGET_SCORE = 15;
+
+// MediaPipe Hands setup (video hidden)
 const video = document.createElement('video');
 video.style.display='none';
 video.width = 640; video.height = 480;
 document.body.appendChild(video);
 
-let lastPalm = null;     // {x,y,t}
-let palm = {x:0,y:0};    // in screen coords relative to canvas
-let palmVel = {x:0,y:0}; // px per second
+let lastPalm = null;
+let palm = {x:0,y:0,openness:0};
+let palmVel = {x:0,y:0};
 let lastTime = performance.now();
 
-// Helper: convert normalized (0..1) landmark coords to canvas pixels (flip X because webcam mirror)
 function normToCanvas(nx, ny) {
-  // nx,ny from MediaPipe: 0 left -> 1 right (camera image). We'll mirror so movement is natural.
-  // Mirror X so user's left-right feels natural.
+  // Mirror X to make movement natural
   const x = W - nx * W;
   const y = ny * H;
   return {x,y};
 }
 
-// Start MediaPipe Hands
 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({
   maxNumHands: 1,
@@ -121,218 +196,314 @@ hands.setOptions({
 });
 hands.onResults(onHandsResults);
 
-// Camera utils
-camera = new Camera(video, {
+const camera = new Camera(video, {
   onFrame: async () => { await hands.send({image: video}); },
   width: 640,
   height: 480
 });
 
-// ---------- Hand processing ----------
 function onHandsResults(results) {
   const now = performance.now();
-  const dt = Math.max(1, now - lastTime); // ms
+  const dt = Math.max(1, now - lastTime);
   lastTime = now;
 
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
     const lm = results.multiHandLandmarks[0];
-
-    // Choose palm center: average of wrist (0) and middle finger mcp (9) for stability
-    const cxN = (lm[0].x + lm[9].x) / 2;
-    const cyN = (lm[0].y + lm[9].y) / 2;
+    const cxN = (lm[0].x + lm[9].x)/2;
+    const cyN = (lm[0].y + lm[9].y)/2;
     const p = normToCanvas(cxN, cyN);
 
-    // compute velocity px/sec
     if (lastPalm) {
       const dx = p.x - lastPalm.x;
       const dy = p.y - lastPalm.y;
       const vx = dx / (dt/1000);
       const vy = dy / (dt/1000);
-      palmVel.x = vx;
-      palmVel.y = vy;
-    } else {
-      palmVel.x = 0; palmVel.y = 0;
-    }
+      palmVel.x = vx; palmVel.y = vy;
+    } else { palmVel.x = 0; palmVel.y = 0; }
 
-    palm.x = p.x;
-    palm.y = p.y;
-    lastPalm = {x: p.x, y: p.y};
+    palm.x = p.x; palm.y = p.y;
+    lastPalm = {x:p.x, y:p.y};
 
-    // also determine if palm is 'open' vs fist lightly by using distance between index tip (8) and thumb tip (4)
-    const dThumbIndex = Math.hypot((lm[8].x - lm[4].x), (lm[8].y - lm[4].y)); // normalized
+    const dThumbIndex = Math.hypot((lm[8].x - lm[4].x), (lm[8].y - lm[4].y));
     palm.openness = dThumbIndex;
 
   } else {
-    // no hand detected
     palmVel.x = 0; palmVel.y = 0;
     lastPalm = null;
   }
-
-  // update debug UI
   updateDebug();
 }
 
-// ---------- Debug UI ----------
 function updateDebug() {
-  const s = `
+  debugEl.innerHTML = `
     <div style="font-size:13px"><strong>Palm</strong></div>
-    <div class="small">x: ${palm.x.toFixed(0)} px  y: ${palm.y.toFixed(0)} px</div>
+    <div class="small">x: ${palm.x.toFixed(0)}px  y: ${palm.y.toFixed(0)}px</div>
     <div class="small">vx: ${palmVel.x.toFixed(1)} px/s  vy: ${palmVel.y.toFixed(1)} px/s</div>
-    <div class="small">openness: ${ (palm.openness||0).toFixed(3) }</div>
-    <div style="margin-top:6px" class="muted">Slap threshold (positive X): ${sensitivityEl.value}</div>
-    <div style="margin-top:6px" class="muted">Player: ${score.player}  —  AI: ${score.ai}</div>
+    <div class="small">openness: ${(palm.openness||0).toFixed(3)}</div>
+    <div style="margin-top:6px" class="muted">Slap threshold: ${sensitivityEl.value}</div>
+    <div style="margin-top:6px" class="muted">Score — You: ${score.player}  AI: ${score.ai}</div>
   `;
-  debugEl.innerHTML = s;
 }
 
-// ---------- Game loop ----------
-function resetBall(servesToPlayer=true) {
-  ball.x = W/2; ball.y = H/2;
-  const angle = (Math.random()*Math.PI/4) - Math.PI/8; // small angle
+// Game logic - 3D bounce simulation
+function resetBall(toPlayer=true) {
+  ball.x = W/2;
+  ball.y = tableHeight - 60;
+  ball.z = 10 + Math.random()*40; // start slightly in air
+  const angle = (Math.random()*Math.PI/6) - Math.PI/12;
   const speed = 6 + Math.random()*2;
-  ball.vx = (servesToPlayer? -1:1) * speed * Math.cos(angle);
+  ball.vx = (toPlayer ? -1 : 1) * speed * Math.cos(angle);
   ball.vy = speed * Math.sin(angle);
+  ball.vz = 6 + Math.random()*3;
+  ball.spin = 0;
 }
 
 function step() {
-  // if running, update physics
   if (running) {
-    // Move player paddle using palm Y (if hand present)
+    // Player paddle follows palm Y (only if visible)
     if (lastPalm) {
-      // smooth follow to avoid jitter
       const targetY = palm.y - player.h/2;
-      player.y += (targetY - player.y) * 0.28; // smoothing factor
-      // clamp
+      player.y += (targetY - player.y) * 0.28;
       player.y = Math.max(8, Math.min(H - player.h - 8, player.y));
     }
 
-    // simple AI: move toward ball Y
+    // AI
     const targetAI = ball.y - ai.h/2;
-    const diff = targetAI - ai.y;
-    ai.y += Math.sign(diff) * Math.min(Math.abs(diff), ai.speed + Math.abs(ball.vx)*0.02);
+    const dif = targetAI - ai.y;
+    ai.y += Math.sign(dif) * Math.min(Math.abs(dif), ai.speed + Math.abs(ball.vx)*0.02);
     ai.y = Math.max(8, Math.min(H - ai.h - 8, ai.y));
 
-    // Move ball
+    // Ball physics: continuous in x,y. For z (height) simulate bounce on table plane at z=0.
     ball.x += ball.vx;
     ball.y += ball.vy;
+    // update vertical movement
+    ball.vz += gravity * 0.25; // gravity pulls down (positive up)
+    ball.z += ball.vz;
 
-    // Collide top/bottom
-    if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -1; }
-    if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy *= -1; }
-
-    // Player paddle collision (simple AABB vs circle)
-    if (ball.x - ball.r < player.x + player.w) {
-      if (ball.y > player.y && ball.y < player.y + player.h) {
-        // check if slap gesture is happening strongly toward the right
-        const slapThreshold = parseFloat(sensitivityEl.value) * 800; // tuned scale
-        const isSlap = palmVel.x > slapThreshold && lastPalm && Math.abs(palm.y - (player.y + player.h/2)) < player.h*0.7;
-        // also allow weaker auto-hit if ball is very slow (makes it playable)
-        const autoHit = Math.abs(ball.vx) < 5;
-        if (isSlap || autoHit) {
-          // reflect ball
-          ball.x = player.x + player.w + ball.r + 1;
-          // Add horizontal velocity based on slap speed
-          const slapBoost = isSlap ? Math.min(1.6, palmVel.x / (slapThreshold*1.2)) : 1.0;
-          ball.vx = Math.abs(ball.vx) * (1 + 0.2*slapBoost) + 4 * slapBoost; // push rightwards
-          // vertical based on where it hit paddle
-          const rel = (ball.y - (player.y + player.h/2)) / (player.h/2);
-          ball.vy = rel * 6 + (Math.random()-0.5)*3;
-          // add tiny spin if slap had vertical component
-          ball.vy += palmVel.y * 0.002;
-        } else {
-          // if paddle area but no slap, bounce slightly (let it graze)
-          ball.x = player.x + player.w + ball.r + 1;
-          ball.vx = Math.abs(ball.vx) * 0.9; // dampen, nudged
-          ball.vx *= -1; // let it go back (simulate miss)
-        }
+    // When ball hits table (z <= 0)
+    if (ball.z <= 0) {
+      ball.z = 0;
+      // bounce: invert vertical velocity with damping
+      ball.vz = -ball.vz * 0.68;
+      // add small random spin/vertical jitter
+      ball.vx *= 1.01;
+      // if bounce is tiny, flatten (stop bouncing)
+      if (Math.abs(ball.vz) < 1.2) {
+        ball.vz = 0;
       }
     }
 
-    // AI paddle collision
-    if (ball.x + ball.r > ai.x) {
-      if (ball.y > ai.y && ball.y < ai.y + ai.h) {
-        ball.x = ai.x - ball.r - 1;
-        ball.vx = -Math.abs(ball.vx) * 1.02; // AI returns slightly faster over time
-        // vertical deflection based on hit spot
-        const rel = (ball.y - (ai.y + ai.h/2)) / (ai.h/2);
-        ball.vy = rel * 6 + (Math.random()-0.5)*3;
+    // If ball goes beyond left side (player missed)
+    if (ball.x < -80) {
+      score.ai += 1;
+      updateScoreUI();
+      if (score.ai >= TARGET_SCORE) {
+        endGame(false);
+      } else {
+        resetBall(false);
+      }
+    }
+    // If ball goes beyond right side (ai missed)
+    if (ball.x > W + 80) {
+      score.player += 1;
+      updateScoreUI();
+      if (score.player >= TARGET_SCORE) {
+        endGame(true);
+      } else {
+        resetBall(true);
       }
     }
 
-    // Score out-of-bounds
-    if (ball.x < -30) { score.ai += 1; resetBall(false); }
-    if (ball.x > W + 30) { score.player += 1; resetBall(true); }
+    // Player hit logic: only possible when ball is near player x-range AND low (z small => near table)
+    const hittableRange = 160; // px horizontally
+    const slapThreshold = parseFloat(sensitivityEl.value) * 850; // tuned
+    const nearPlayerX = (ball.x - player.x) < hittableRange && (ball.x - player.x) > -40;
+    const nearPlayerY = (ball.y > player.y - 30) && (ball.y < player.y + player.h + 30);
+    const lowEnough = ball.z < 24; // only when ball is near table (small z)
+    const isSlap = palmVel.x > slapThreshold && lastPalm && Math.abs(palm.y - (player.y + player.h/2)) < player.h*0.8;
+    const autoHit = Math.abs(ball.vx) < 4; // auto-hit slow ball
+
+    if (nearPlayerX && nearPlayerY && lowEnough && (isSlap || autoHit)) {
+      // apply hit: reflect ball to right, add boost based on slap
+      ball.x = player.x + player.w + ball.r + 6;
+      const slapBoost = isSlap ? Math.min(1.9, palmVel.x / (slapThreshold*1.2)) : 0.9;
+      ball.vx = Math.abs(ball.vx) * (1 + 0.25*slapBoost) + 5 * slapBoost;
+      // vertical (y) depends on hit spot
+      const rel = (ball.y - (player.y + player.h/2)) / (player.h/2);
+      ball.vy = rel * 6 + (Math.random()-0.5)*3;
+      // set upward arc
+      ball.vz = 6 * (0.9 + slapBoost*0.6);
+      // spin based on vertical palm vel
+      ball.spin = palmVel.y * 0.004;
+      // visual effect: tiny camera flash
+      spawnHitParticles(ball.x, ball.y, 'cyan');
+    }
+
+    // AI hit logic - AI will return when ball is low near its paddle
+    const nearAI = (ai.x - ball.x) < hittableRange && (ai.x - ball.x) > -40;
+    if (nearAI && (ball.z < 30) && (ball.y > ai.y - 30) && (ball.y < ai.y + ai.h + 30)) {
+      ball.x = ai.x - ball.r - 6;
+      ball.vx = -Math.abs(ball.vx) * (1 + Math.random()*0.08);
+      const rel = (ball.y - (ai.y + ai.h/2)) / (ai.h/2);
+      ball.vy = rel * 6 + (Math.random()-0.5)*3;
+      ball.vz = 6 + Math.random()*3;
+      ball.spin = (Math.random()-0.5) * 0.02;
+      spawnHitParticles(ball.x, ball.y, 'pink');
+    }
+
+    // small speed clamp
+    ball.vx = Math.max(Math.min(ball.vx, 28), -28);
+    ball.vy = Math.max(Math.min(ball.vy, 16), -16);
   }
 
   draw();
   requestAnimationFrame(step);
 }
 
-// ---------- Drawing ----------
-function draw() {
-  ctx.clearRect(0,0,W,H);
-  // background subtle grid
-  ctx.fillStyle = '#071228';
-  ctx.fillRect(0,0,W,H);
-
-  // net
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 2;
-  for (let y=10; y<H; y+=22) {
-    ctx.beginPath();
-    ctx.moveTo(W/2, y);
-    ctx.lineTo(W/2, y+12);
-    ctx.stroke();
-  }
-
-  // paddles
-  // player
-  ctx.fillStyle = '#00d1ff';
-  roundRect(ctx, player.x, player.y, player.w, player.h, 8, true);
-  // ai
-  ctx.fillStyle = '#ff8a00';
-  roundRect(ctx, ai.x, ai.y, ai.w, ai.h, 8, true);
-
-  // ball
-  ctx.beginPath();
-  ctx.fillStyle = '#fff';
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-  ctx.fill();
-
-  // Scores
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = '36px system-ui';
-  ctx.textAlign='center';
-  ctx.fillText(score.player, W*0.25, 60);
-  ctx.fillText(score.ai, W*0.75, 60);
-
-  // debug: draw palm and vector if available
-  if (lastPalm) {
-    ctx.strokeStyle = 'rgba(0,255,200,0.9)';
-    ctx.fillStyle = 'rgba(0,255,200,0.12)';
-    ctx.beginPath();
-    ctx.arc(palm.x, palm.y, 18, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-
-    // velocity arrow
-    ctx.beginPath();
-    ctx.moveTo(palm.x, palm.y);
-    ctx.lineTo(palm.x + palmVel.x*0.02, palm.y + palmVel.y*0.02);
-    ctx.strokeStyle = 'rgba(0,255,200,0.8)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  }
-
-  // HUD small
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(6, H-46, 220, 38);
-  ctx.fillStyle = '#cfeff8';
-  ctx.font = '13px system-ui';
-  ctx.textAlign='left';
-  ctx.fillText('Move hand up/down to control paddle. Slap to hit.', 12, H-22);
+// Score UI
+function updateScoreUI(){
+  playerScoreEl.textContent = score.player;
+  aiScoreEl.textContent = score.ai;
 }
 
+// End game
+function endGame(didWin) {
+  running = false;
+  // show overlay
+  endScreen.style.display = 'flex';
+  if (didWin) {
+    endTitle.textContent = 'YOU WON!';
+    endTitle.className = 'end-title glow-winner';
+    endSubtitle.textContent = `You reached ${TARGET_SCORE} — neon victory!`;
+  } else {
+    endTitle.textContent = 'YOU LOST';
+    endTitle.className = 'end-title glow-loser';
+    endSubtitle.textContent = `AI reached ${TARGET_SCORE}. Try again.`;
+  }
+}
+
+// Restart
+playAgain.onclick = () => {
+  endScreen.style.display = 'none';
+  score.player = 0; score.ai = 0;
+  updateScoreUI();
+  resetBall(true);
+  startGame();
+};
+closeBtn.onclick = () => { endScreen.style.display = 'none'; };
+
+// Drawing (neon table + shadows + ball scale)
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  // background subtle vignette
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#02060b');
+  g.addColorStop(1,'#050b18');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // draw neon grid floor (perspective)
+  drawNeonTable();
+
+  // draw net (thin neon)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 2;
+  for (let y=tableHeight-220; y<tableHeight+260; y+=22) {
+    ctx.beginPath();
+    ctx.moveTo(W/2-1, y);
+    ctx.lineTo(W/2-1, y+12);
+    ctx.stroke();
+  }
+
+  // draw paddles (neon glow)
+  drawNeonPaddle(player, '#00f0ff');
+  drawNeonPaddle(ai, '#ff2dd7');
+
+  // compute ball screen size from z (higher => smaller)
+  const zFactor = 1 - Math.min(1, ball.z / 160);
+  const drawR = Math.max(6, ball.r * (0.9 + 0.9*zFactor));
+  // drop shadow under ball: depends on z
+  const shadowScale = 1 - Math.min(0.9, ball.z / 180);
+  ctx.beginPath();
+  ctx.ellipse(ball.x - Math.max(0, ball.spin*60), tableHeight + 6, drawR*1.1*shadowScale + 2, drawR*0.4*shadowScale + 1, 0, 0, Math.PI*2);
+  ctx.fillStyle = `rgba(0,0,0,${0.36 * shadowScale})`;
+  ctx.fill();
+
+  // ball glow + highlight
+  const bgrad = ctx.createRadialGradient(ball.x - drawR*0.2, ball.y - drawR*0.6 - ball.z*0.22, drawR*0.4, ball.x, ball.y - ball.z*0.2, drawR*1.2);
+  bgrad.addColorStop(0, 'rgba(255,255,255,0.98)');
+  bgrad.addColorStop(0.08, 'rgba(255,255,255,0.9)');
+  bgrad.addColorStop(0.2, 'rgba(220,240,255,0.9)');
+  bgrad.addColorStop(1, 'rgba(160,240,255,0.02)');
+  ctx.beginPath();
+  ctx.fillStyle = bgrad;
+  ctx.arc(ball.x, ball.y - ball.z*0.6, drawR, 0, Math.PI*2);
+  ctx.fill();
+
+  // center HUD
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(12, H-58, 300, 44);
+  ctx.fillStyle = '#e8fbff';
+  ctx.font = '14px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText('Move hand up/down to control paddle. Slap to hit when ball is low.', 20, H-30);
+}
+
+// Draw neon paddle with glow
+function drawNeonPaddle(p, color) {
+  // outer glow
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 40;
+  ctx.fillStyle = color;
+  roundRect(ctx, p.x, p.y, p.w, p.h, 12, true);
+  ctx.restore();
+
+  // inner glossy line
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(p.x + 6, p.y + 10, p.w - 12, p.h - 20);
+}
+
+// table perspective grid
+function drawNeonTable() {
+  // table base rectangle with gradient to simulate depth
+  const tableTop = tableHeight;
+  const tblGrad = ctx.createLinearGradient(0, tableTop-80, 0, H);
+  tblGrad.addColorStop(0,'rgba(0,20,30,0.28)');
+  tblGrad.addColorStop(1,'rgba(0,6,10,0.8)');
+  ctx.fillStyle = tblGrad;
+  // perspective polygon
+  ctx.beginPath();
+  ctx.moveTo(80, tableTop - 20);
+  ctx.lineTo(W-80, tableTop - 20);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // neon grid lines (converging)
+  ctx.strokeStyle = 'rgba(0,240,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let i=0;i<26;i++){
+    const t = i/25;
+    const x = 80 + (W-160)*t;
+    ctx.beginPath();
+    ctx.moveTo(x, tableTop - 20);
+    ctx.lineTo(W/2 + (x - W/2)*2.4, H);
+    ctx.stroke();
+  }
+
+  // center neon stripe
+  ctx.strokeStyle = 'rgba(0,240,255,0.06)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(W/2, tableTop-20);
+  ctx.lineTo(W/2, H);
+  ctx.stroke();
+}
+
+// Utility round rect
 function roundRect(ctx, x, y, w, h, r, fill) {
   ctx.beginPath();
   ctx.moveTo(x+r, y);
@@ -345,20 +516,55 @@ function roundRect(ctx, x, y, w, h, r, fill) {
   else ctx.stroke();
 }
 
-// ---------- Controls ----------
+// Simple particle system for hit effects
+const particles = [];
+function spawnHitParticles(x,y,color){
+  for (let i=0;i<12;i++){
+    particles.push({
+      x:x + (Math.random()-0.5)*18,
+      y:y + (Math.random()-0.5)*12,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.6)*4,
+      life: 28 + Math.random()*24,
+      c: color
+    });
+  }
+}
+function drawParticles(){
+  for (let i = particles.length-1; i>=0; i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life--;
+    ctx.globalAlpha = Math.max(0, p.life/40);
+    ctx.fillStyle = p.c === 'cyan'? 'rgba(0,240,255,0.88)':'rgba(255,45,215,0.88)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (p.life<=0) particles.splice(i,1);
+  }
+}
+
+// Integrate particles draw into main draw call
+const origDraw = draw;
+draw = function() {
+  origDraw();
+  drawParticles();
+};
+
+// Controls
 startBtn.onclick = async () => {
   if (!running) {
     try {
       await camera.start();
       running = true;
       startBtn.textContent = 'Pause';
+      resetBall(true);
     } catch (e) {
       alert('Camera start failed. Allow camera and reload the page. Error: '+e.message);
       console.error(e);
       return;
     }
   } else {
-    // pause
     camera.stop();
     running = false;
     startBtn.textContent = 'Start Game';
@@ -367,6 +573,7 @@ startBtn.onclick = async () => {
 
 resetBtn.onclick = () => {
   score.player = 0; score.ai = 0;
+  updateScoreUI();
   resetBall(true);
 };
 
@@ -374,12 +581,9 @@ resetBtn.onclick = () => {
 resetBall(true);
 requestAnimationFrame(step);
 
-// Attempt to auto-start camera permissions prompt (best-effort)
+// attempt to warm the video element
 (async function tryInitCamera(){
-  try {
-    await video.play().catch(()=>{});
-    // attach camera only on user gesture — but our Start button triggers it via Camera.start
-  } catch(e){}
+  try { await video.play().catch(()=>{}); } catch(e){}
 })();
 
 </script>
