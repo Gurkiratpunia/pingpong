@@ -1,590 +1,947 @@
-<!doctype html>
+<!--
+    hand-slap-table-tennis-3d.html
+
+    BUILD TASK: Single-file 3D Neon Hand-Slap Table Tennis
+    Target Score: 15
+
+    README & USAGE:
+    ============================================================================
+    1. CONTROLS:
+       - Camera (Preferred):
+         - Allow camera access when prompted.
+         - Use your hand to control the LEFT paddle.
+         - Move Up/Down: Controls paddle vertical position.
+         - SLAP (Quick motion Right): Hits the ball. 
+           * Timing matters! Slap when the ball is close to your paddle.
+       - Keyboard (Fallback):
+         - UP/DOWN Arrows: Move paddle.
+         - SPACEBAR: Slap/Hit the ball.
+
+    2. GAME RULES:
+       - Hit the ball past the opponent to score.
+       - The ball bounces! It has height (Z-axis). You must hit it when it is 
+         reachable (physically close) and fairly low to the table.
+       - First to 15 points wins.
+
+    3. TUNING TIPS:
+       - Lighting: Ensure your face/hand is well-lit.
+       - Distance: Sit about 2-3 feet from the camera. 
+       - Sensitivity: If slaps aren't registering, increase the "Slap Sensitivity"
+         slider in the top right menu. If it hits too easily, decrease it.
+
+    4. TECHNICAL NOTES:
+       - Uses MediaPipe Hands (via CDN) for tracking.
+       - Uses HTML5 Canvas for rendering.
+       - Uses Web Audio API for synthesized sound effects (no external audio files).
+       - Physics is "Faux-3D": 2D coordinates with a Z-axis height simulation.
+
+    TEST CHECKLIST:
+    [ ] Camera prompt appears and video loads.
+    [ ] Hand tracking moves the left paddle.
+    [ ] "Slap" gesture (fast right movement) hits the ball with a particle effect.
+    [ ] Ball bounces (gets smaller/larger) indicating depth.
+    [ ] AI (Right side) returns ball and misses occasionally.
+    [ ] Reaching score 15 triggers the WIN/LOSS screen.
+    [ ] "Play Again" resets the score.
+    ============================================================================
+-->
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Neon 3D Hand-Slap Table Tennis (Single File)</title>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<style>
-  :root{
-    --bg:#04060a; --panel:#071428; --neon-cyan:#00f0ff; --neon-pink:#ff2dd7; --muted:#8ea3b6;
-  }
-  html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:linear-gradient(180deg,#03060a 0%, #081025 100%);color:#e6f9ff}
-  .wrap{display:flex;gap:18px;align-items:flex-start;padding:20px;box-sizing:border-box;min-height:100vh}
-  .left {flex:1; display:flex;align-items:center;justify-content:center}
-  canvas{background:transparent;border-radius:14px;box-shadow: 0 20px 60px rgba(0,0,0,0.7);}
-  #ui{width:360px}
-  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:14px; border-radius:12px; color:#dff6ff; margin-bottom:14px; box-shadow: 0 6px 18px rgba(0,0,0,0.6)}
-  h1{margin:0 0 8px 0;font-size:18px;letter-spacing:0.6px}
-  .small{font-size:13px;color:var(--muted)}
-  button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px 12px;border-radius:10px;color:var(--neon-cyan);font-weight:700;cursor:pointer;backdrop-filter: blur(6px)}
-  .btn-primary{background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink)); color:#001820; border:0; box-shadow: 0 8px 30px rgba(0,240,255,0.08); }
-  .row{display:flex;gap:8px;align-items:center;margin-top:8px}
-  .muted{color:var(--muted);font-size:13px}
-  .debug{font-family:monospace;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;margin-top:8px;color:#c9f6ff}
-  .center{display:flex;align-items:center;justify-content:center}
-  footer{font-size:12px;color:var(--muted);margin-top:8px}
-  .score-target{display:flex;gap:12px;align-items:center;font-weight:800;font-size:14px}
-  .neon-pill{padding:8px 10px;border-radius:999px;background:linear-gradient(90deg, rgba(0,240,255,0.12), rgba(255,45,215,0.12));border:1px solid rgba(255,255,255,0.03)}
-  /* End screen */
-  .end-screen {
-    position: absolute;
-    inset:0;
-    display:none;
-    align-items:center;
-    justify-content:center;
-    pointer-events:none;
-  }
-  .end-card {
-    pointer-events:auto;
-    width:680px;
-    max-width:92%;
-    padding:28px;
-    border-radius:16px;
-    text-align:center;
-    box-shadow:0 30px 100px rgba(0,0,0,0.6);
-    background:linear-gradient(180deg, rgba(8,15,30,0.7), rgba(2,6,12,0.6));
-    border:1px solid rgba(255,255,255,0.04);
-  }
-  .end-title {font-size:48px;line-height:1;color:var(--neon-cyan);text-shadow:0 6px 36px rgba(0,240,255,0.12)}
-  .end-sub {font-size:16px;color:var(--muted);margin-top:8px}
-  .glow-winner { color:var(--neon-cyan); text-shadow: 0 6px 40px rgba(0,240,255,0.14), 0 0 12px rgba(0,240,255,0.06); }
-  .glow-loser { color:var(--neon-pink); text-shadow: 0 6px 40px rgba(255,45,215,0.12), 0 0 14px rgba(255,45,215,0.06); }
-  .end-actions {display:flex;gap:10px;justify-content:center;margin-top:18px}
-  .small-muted{font-size:12px;color:rgba(255,255,255,0.6)}
-  /* responsive */
-  @media (max-width:980px){ .wrap{flex-direction:column;align-items:center} #ui{width:92%;} canvas{width:95vw;height:auto} }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Hand-Slap Table Tennis 3D</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --neon-cyan: #00f0ff;
+            --neon-pink: #ff2dd7;
+            --bg-dark: #0a0a10;
+            --overlay-bg: rgba(10, 10, 16, 0.85);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Main Game Container */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            box-shadow: 0 0 50px rgba(0, 240, 255, 0.1);
+            border: 1px solid #333;
+            background: radial-gradient(circle at center, #1a1a24 0%, #000000 100%);
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        /* UI Overlay Elements */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas if needed */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: auto;
+        }
+
+        .score-board {
+            display: flex;
+            gap: 40px;
+            font-size: 3rem;
+            font-weight: 800;
+            text-shadow: 0 0 10px currentColor;
+            z-index: 10;
+        }
+
+        .score-p1 { color: var(--neon-cyan); }
+        .score-p2 { color: var(--neon-pink); }
+        .target-score {
+            font-size: 0.9rem;
+            color: #888;
+            text-align: center;
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .controls-panel {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            text-align: right;
+            backdrop-filter: blur(5px);
+        }
+
+        .controls-panel label {
+            font-size: 0.9rem;
+            display: block;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+
+        input[type=range] {
+            width: 150px;
+            accent-color: var(--neon-cyan);
+        }
+
+        .btn {
+            background: transparent;
+            border: 2px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 8px 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            pointer-events: auto;
+        }
+
+        .btn:hover {
+            background: var(--neon-cyan);
+            color: #000;
+            box-shadow: 0 0 15px var(--neon-cyan);
+        }
+
+        .btn-pink {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+        .btn-pink:hover {
+            background: var(--neon-pink);
+            color: white;
+            box-shadow: 0 0 15px var(--neon-pink);
+        }
+
+        /* Camera Preview (Small) */
+        #camera-preview {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            transform: scaleX(-1); /* Mirror for user feel */
+            opacity: 0.8;
+            z-index: 5;
+            background: black;
+            object-fit: cover;
+        }
+
+        /* Debug Overlay */
+        #debug-info {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #0f0;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 4px;
+            text-align: left;
+            line-height: 1.4;
+            display: none; /* Toggle via code if needed */
+        }
+
+        /* Screens: Start / End */
+        .modal-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--overlay-bg);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            transition: opacity 0.3s;
+        }
+        
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin: 0 0 20px 0;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px var(--neon-cyan), 0 0 40px var(--neon-cyan);
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: #ddd;
+            margin-bottom: 40px;
+            font-weight: 300;
+        }
+
+        .loading-text {
+            color: var(--neon-pink);
+            font-size: 1.2rem;
+            margin-top: 20px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .score-board { font-size: 2rem; gap: 20px; }
+            h1 { font-size: 2.5rem; }
+            #camera-preview { width: 100px; height: 75px; }
+        }
+    </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="left">
-    <div style="position:relative">
-      <canvas id="game" width="1000" height="600"></canvas>
 
-      <!-- End screen overlay -->
-      <div id="endScreen" class="end-screen">
-        <div class="end-card" id="endCard">
-          <div id="endTitle" class="end-title">You Won!</div>
-          <div id="endSubtitle" class="end-sub">Score 15 reached — neon victory!</div>
-          <div class="end-actions">
-            <button id="playAgain" class="btn-primary">Play Again</button>
-            <button id="closeBtn">Close</button>
-          </div>
-          <div style="margin-top:10px" class="small-muted">Try again for a better score or change sensitivity.</div>
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <video id="camera-preview" playsinline muted></video> <!-- Hidden logic video, shown scaled via CSS -->
+    
+    <!-- UI Overlay -->
+    <div class="ui-layer">
+        <div class="top-bar">
+            <div>
+                <div class="score-board">
+                    <div class="score-p1" id="scoreP1">0</div>
+                    <div class="score-p2" id="scoreP2">0</div>
+                </div>
+                <div class="target-score">First to 15 Wins</div>
+            </div>
+
+            <div class="controls-panel">
+                <label for="sensitivity">Slap Sensitivity</label>
+                <input type="range" id="sensitivity" min="0.6" max="3.0" step="0.1" value="1.6">
+                <br>
+                <button id="btn-debug" class="btn" style="font-size:0.7rem; padding:4px 8px;">Toggle Debug</button>
+            </div>
         </div>
-      </div>
-
-    </div>
-  </div>
-
-  <div id="ui">
-    <div class="card">
-      <h1>Neon 3D Hand-Slap Table Tennis</h1>
-      <div class="small">Control left paddle with your palm. Move palm up/down to position. Do a fast forward/right slap near the paddle to hit. Target score: <strong>15</strong>.</div>
-
-      <div class="row" style="margin-top:12px">
-        <button id="startBtn" class="btn-primary">Start Game</button>
-        <button id="resetBtn">Reset Scores</button>
-      </div>
-
-      <div class="row" style="margin-top:12px">
-        <label class="muted">Slap sensitivity</label>
-        <input id="sensitivity" type="range" min="0.6" max="3.0" step="0.05" value="1.6" style="flex:1"/>
-      </div>
-
-      <div style="margin-top:12px" class="score-target">
-        <div class="neon-pill">You: <span id="playerScore">0</span></div>
-        <div class="neon-pill">AI: <span id="aiScore">0</span></div>
-        <div class="neon-pill">Target: <strong>15</strong></div>
-      </div>
-
-      <div class="debug" id="debug">Loading camera...</div>
-      <footer>Uses MediaPipe Hands. Best in Chrome/Edge. Good lighting improves tracking.</footer>
+        
+        <div id="debug-info">
+            State: <span id="dbg-state">INIT</span><br>
+            Hand Y: <span id="dbg-hand-y">0</span><br>
+            Hand VX: <span id="dbg-hand-vx">0</span><br>
+            Slap Thresh: <span id="dbg-thresh">0</span>
+        </div>
     </div>
 
-    <div class="card">
-      <div class="small"><strong>Tips</strong></div>
-      <ul class="small" style="margin:8px 0 0 16px">
-        <li>Keep your hand in the left half of the camera view (approx).</li>
-        <li>Move palm vertically to control paddle. Slight smoothing applied.</li>
-        <li>Slap when the ball is low (near the table) for best hit—ball must be near table (z small).</li>
-        <li>Use the slider to tune slap strength.</li>
-      </ul>
+    <!-- Start Screen -->
+    <div id="start-screen" class="modal-overlay">
+        <h1>Neon Slap<br>Table Tennis</h1>
+        <h2>Control paddle with your hand.<br>Slap right to hit.</h2>
+        <button id="btn-start" class="btn" disabled>Loading AI...</button>
+        <div id="loading-msg" class="loading-text">Initializing Camera & Models...</div>
+        <p style="margin-top:20px; font-size:0.8rem; color:#888">
+            Fallback: Arrow Keys to Move, Space to Slap
+        </p>
     </div>
-  </div>
+
+    <!-- End Screen -->
+    <div id="end-screen" class="modal-overlay hidden">
+        <h1 id="end-title">YOU WON!</h1>
+        <h2 id="end-subtitle">Final Score: 15 - 12</h2>
+        <button id="btn-restart" class="btn btn-pink">Play Again</button>
+    </div>
 </div>
 
-<!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
 <script>
-/* Neon 3D Table Tennis
-   - Uses a faux-3D approach: ball has z (height above table)
-   - Ball scale & shadow change with z to create depth illusion
-   - Paddle is flat but glows neon; table has perspective gradient
-   - Target score of 15 -> end screen (win/lose)
-   - Slap detection: palmVel.x threshold; ball hittable only when near table (z < threshold)
-*/
-
-// Canvas setup
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', {alpha:true});
-const W = canvas.width, H = canvas.height;
-
-// UI elements
-const startBtn = document.getElementById('startBtn');
-const resetBtn  = document.getElementById('resetBtn');
-const debugEl   = document.getElementById('debug');
-const sensitivityEl = document.getElementById('sensitivity');
-const playerScoreEl = document.getElementById('playerScore');
-const aiScoreEl = document.getElementById('aiScore');
-
-const endScreen = document.getElementById('endScreen');
-const endTitle  = document.getElementById('endTitle');
-const endSubtitle= document.getElementById('endSubtitle');
-const playAgain = document.getElementById('playAgain');
-const closeBtn  = document.getElementById('closeBtn');
-
-let running = false;
-
-// Game objects
-const paddleW = 18, paddleH = 120;
-const player = {x: 56, y: H/2 - paddleH/2, w: paddleW, h: paddleH};
-const ai = {x: W-56-paddleW, y: H/2 - paddleH/2, w: paddleW, h: paddleH, speed: 4.6};
-
-let ball = {
-  x: W/2, y: H/2, r: 12,
-  // faux-3D z axis (0 = on table surface; higher = mid-air)
-  z: 0, vz: 0,
-  vx: 6 * (Math.random()>0.5?1:-1),
-  vy: 1.5 * (Math.random()>0.5?1:-1),
-  spin: 0
-};
-
-const gravity = -0.65; // negative because we treat z=0 table plane; vz positive = up
-const tableHeight = H*0.56; // Y coordinate of the table surface baseline
-
-let score = {player:0, ai:0};
+/*
+ * ------------------------------------------------------------------
+ * CONFIGURATION & STATE
+ * ------------------------------------------------------------------
+ */
+const CANVAS_WIDTH = 1280;
+const CANVAS_HEIGHT = 720;
 const TARGET_SCORE = 15;
 
-// MediaPipe Hands setup (video hidden)
-const video = document.createElement('video');
-video.style.display='none';
-video.width = 640; video.height = 480;
-document.body.appendChild(video);
+// Physics Constants
+const GRAVITY = 0.25;         // Z-axis gravity
+const TABLE_Z = 0;            // Floor level
+const NET_Z_HEIGHT = 25;      // Height of net
+const BOUNCE_DAMPING = 0.85;  // Energy kept after bounce
+const FRICTION = 0.995;       // Air resistance
+const BASE_BALL_SPEED_X = 9;  // Horizontal speed
+const SLAP_BOOST_X = 4;       // Extra speed from a hard slap
+const AI_SPEED_BASE = 0.07;   // AI tracking interpolation factor
 
-let lastPalm = null;
-let palm = {x:0,y:0,openness:0};
-let palmVel = {x:0,y:0};
-let lastTime = performance.now();
+// Colors
+const COL_CYAN = '#00f0ff';
+const COL_PINK = '#ff2dd7';
+const COL_WHITE = '#ffffff';
+const COL_GRID = '#1a1a24';
 
-function normToCanvas(nx, ny) {
-  // Mirror X to make movement natural
-  const x = W - nx * W;
-  const y = ny * H;
-  return {x,y};
-}
+// Game State
+const STATE = {
+    MENU: 0,
+    PLAYING: 1,
+    GAME_OVER: 2
+};
 
-const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.6
+let gameState = STATE.MENU;
+let scores = { p1: 0, p2: 0 };
+let particles = [];
+let audioCtx = null; // Initialize on interaction
+
+// Physics Objects
+const paddleLeft = {
+    x: 60, y: CANVAS_HEIGHT/2, w: 20, h: 120, 
+    color: COL_CYAN, 
+    vy: 0, targetY: CANVAS_HEIGHT/2
+};
+const paddleRight = {
+    x: CANVAS_WIDTH - 60, y: CANVAS_HEIGHT/2, w: 20, h: 120, 
+    color: COL_PINK, 
+    vy: 0, targetY: CANVAS_HEIGHT/2
+};
+const ball = {
+    x: CANVAS_WIDTH/2, y: CANVAS_HEIGHT/2, z: 200, // Start high
+    vx: 0, vy: 0, vz: 0,
+    radius: 12,
+    color: COL_WHITE
+};
+
+/*
+ * ------------------------------------------------------------------
+ * INPUT HANDLING (MediaPipe + Keyboard)
+ * ------------------------------------------------------------------
+ */
+const videoElement = document.getElementById('camera-preview');
+const sensitivitySlider = document.getElementById('sensitivity');
+const debugInfo = document.getElementById('debug-info');
+
+// Hand Tracking Data
+let handData = {
+    present: false,
+    x: 0.5, y: 0.5, // Normalized 0-1
+    vx: 0, vy: 0,   // Velocity
+    lastX: 0.5, lastY: 0.5,
+    lastTime: 0
+};
+
+// Slap Detection Logic
+let slapThresholdBase = 1.6; // Multiplier
+let isSlapping = false;
+let slapCooldown = 0;
+
+// Keyboard Fallback State
+const keys = { ArrowUp: false, ArrowDown: false, Space: false };
+
+window.addEventListener('keydown', e => {
+    if(keys.hasOwnProperty(e.code)) keys[e.code] = true;
+    // Prevent scrolling
+    if(['ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
 });
-hands.onResults(onHandsResults);
-
-const camera = new Camera(video, {
-  onFrame: async () => { await hands.send({image: video}); },
-  width: 640,
-  height: 480
+window.addEventListener('keyup', e => {
+    if(keys.hasOwnProperty(e.code)) keys[e.code] = false;
 });
 
-function onHandsResults(results) {
-  const now = performance.now();
-  const dt = Math.max(1, now - lastTime);
-  lastTime = now;
+/*
+ * ------------------------------------------------------------------
+ * MEDIAPIPE SETUP
+ * ------------------------------------------------------------------
+ */
+function onResults(results) {
+    const now = performance.now();
+    const dt = (now - handData.lastTime) / 1000; // Seconds
 
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-    const lm = results.multiHandLandmarks[0];
-    const cxN = (lm[0].x + lm[9].x)/2;
-    const cyN = (lm[0].y + lm[9].y)/2;
-    const p = normToCanvas(cxN, cyN);
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handData.present = true;
+        
+        // Get first hand (assuming single player)
+        const landmarks = results.multiHandLandmarks[0];
+        
+        // Using wrist (0) and middle finger mcp (9) average for stable palm center
+        // Note: Camera is usually mirrored. x=0 is left on video (right in reality).
+        // We flip X so that moving hand Right (physically) increases X.
+        let rawX = 1.0 - landmarks[9].x; 
+        let rawY = landmarks[9].y;
 
-    if (lastPalm) {
-      const dx = p.x - lastPalm.x;
-      const dy = p.y - lastPalm.y;
-      const vx = dx / (dt/1000);
-      const vy = dy / (dt/1000);
-      palmVel.x = vx; palmVel.y = vy;
-    } else { palmVel.x = 0; palmVel.y = 0; }
+        // Calculate Velocity (units per second)
+        if (dt > 0) {
+            let vx = (rawX - handData.lastX) / dt;
+            let vy = (rawY - handData.lastY) / dt;
+            
+            // Simple smoothing for velocity
+            handData.vx = handData.vx * 0.5 + vx * 0.5;
+            handData.vy = handData.vy * 0.5 + vy * 0.5;
+        }
 
-    palm.x = p.x; palm.y = p.y;
-    lastPalm = {x:p.x, y:p.y};
+        handData.lastX = rawX;
+        handData.lastY = rawY;
 
-    const dThumbIndex = Math.hypot((lm[8].x - lm[4].x), (lm[8].y - lm[4].y));
-    palm.openness = dThumbIndex;
+        // Update Paddle Target (Map 0-1 Y to Canvas Height)
+        // Add some buffer so you can reach corners
+        let mappedY = rawY * CANVAS_HEIGHT;
+        paddleLeft.targetY = mappedY;
 
-  } else {
-    palmVel.x = 0; palmVel.y = 0;
-    lastPalm = null;
-  }
-  updateDebug();
-}
-
-function updateDebug() {
-  debugEl.innerHTML = `
-    <div style="font-size:13px"><strong>Palm</strong></div>
-    <div class="small">x: ${palm.x.toFixed(0)}px  y: ${palm.y.toFixed(0)}px</div>
-    <div class="small">vx: ${palmVel.x.toFixed(1)} px/s  vy: ${palmVel.y.toFixed(1)} px/s</div>
-    <div class="small">openness: ${(palm.openness||0).toFixed(3)}</div>
-    <div style="margin-top:6px" class="muted">Slap threshold: ${sensitivityEl.value}</div>
-    <div style="margin-top:6px" class="muted">Score — You: ${score.player}  AI: ${score.ai}</div>
-  `;
-}
-
-// Game logic - 3D bounce simulation
-function resetBall(toPlayer=true) {
-  ball.x = W/2;
-  ball.y = tableHeight - 60;
-  ball.z = 10 + Math.random()*40; // start slightly in air
-  const angle = (Math.random()*Math.PI/6) - Math.PI/12;
-  const speed = 6 + Math.random()*2;
-  ball.vx = (toPlayer ? -1 : 1) * speed * Math.cos(angle);
-  ball.vy = speed * Math.sin(angle);
-  ball.vz = 6 + Math.random()*3;
-  ball.spin = 0;
-}
-
-function step() {
-  if (running) {
-    // Player paddle follows palm Y (only if visible)
-    if (lastPalm) {
-      const targetY = palm.y - player.h/2;
-      player.y += (targetY - player.y) * 0.28;
-      player.y = Math.max(8, Math.min(H - player.h - 8, player.y));
+    } else {
+        handData.present = false;
     }
+    handData.lastTime = now;
+    
+    updateDebug();
+}
 
-    // AI
-    const targetAI = ball.y - ai.h/2;
-    const dif = targetAI - ai.y;
-    ai.y += Math.sign(dif) * Math.min(Math.abs(dif), ai.speed + Math.abs(ball.vx)*0.02);
-    ai.y = Math.max(8, Math.min(H - ai.h - 8, ai.y));
+const hands = new Hands({locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+}});
 
-    // Ball physics: continuous in x,y. For z (height) simulate bounce on table plane at z=0.
+hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+});
+hands.onResults(onResults);
+
+// Camera Setup
+const camera = new Camera(videoElement, {
+    onFrame: async () => {
+        await hands.send({image: videoElement});
+    },
+    width: 640,
+    height: 480
+});
+
+// UI Update helper
+function updateDebug() {
+    if(debugInfo.style.display !== 'none') {
+        document.getElementById('dbg-state').innerText = Object.keys(STATE)[gameState];
+        document.getElementById('dbg-hand-y').innerText = handData.present ? handData.lastY.toFixed(2) : 'N/A';
+        document.getElementById('dbg-hand-vx').innerText = handData.vx.toFixed(2);
+        const thresh = (sensitivitySlider.value * 1.5).toFixed(2);
+        document.getElementById('dbg-thresh').innerText = thresh;
+    }
+}
+
+/*
+ * ------------------------------------------------------------------
+ * AUDIO SYSTEM (Web Audio API)
+ * ------------------------------------------------------------------
+ */
+function playSound(type) {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+
+    if (type === 'hit') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+    } else if (type === 'bounce') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, now);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+    } else if (type === 'score') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, now);
+        osc.frequency.linearRampToValueAtTime(800, now + 0.2);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.4);
+        osc.start(now);
+        osc.stop(now + 0.4);
+    } else if (type === 'win') {
+        // Simple arpeggio
+        [440, 554, 659, 880].forEach((freq, i) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.type = 'triangle';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(0.2, now + i*0.1);
+            g.gain.exponentialRampToValueAtTime(0.01, now + i*0.1 + 0.4);
+            o.start(now + i*0.1);
+            o.stop(now + i*0.1 + 0.4);
+        });
+    }
+}
+
+/*
+ * ------------------------------------------------------------------
+ * GAME LOGIC & PHYSICS
+ * ------------------------------------------------------------------
+ */
+
+function resetBall(server = 'p1') {
+    ball.x = CANVAS_WIDTH / 2;
+    ball.y = CANVAS_HEIGHT / 2;
+    ball.z = 200;
+    ball.vx = (server === 'p1' ? 1 : -1) * 2; // Serve gently
+    ball.vy = (Math.random() - 0.5) * 4;
+    ball.vz = 0;
+}
+
+function checkWin() {
+    if (scores.p1 >= TARGET_SCORE || scores.p2 >= TARGET_SCORE) {
+        gameState = STATE.GAME_OVER;
+        playSound('win');
+        const endTitle = document.getElementById('end-title');
+        const endSub = document.getElementById('end-subtitle');
+        const endScreen = document.getElementById('end-screen');
+        
+        if (scores.p1 >= TARGET_SCORE) {
+            endTitle.innerText = "YOU WON!";
+            endTitle.style.textShadow = `0 0 20px ${COL_CYAN}`;
+        } else {
+            endTitle.innerText = "YOU LOST";
+            endTitle.style.textShadow = `0 0 20px ${COL_PINK}`;
+        }
+        endSub.innerText = `Final Score: ${scores.p1} - ${scores.p2}`;
+        endScreen.classList.remove('hidden');
+    }
+}
+
+function spawnParticles(x, y, color) {
+    for(let i=0; i<15; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 10,
+            vy: (Math.random() - 0.5) * 10,
+            life: 1.0,
+            color: color
+        });
+    }
+}
+
+function update() {
+    if (gameState !== STATE.PLAYING) return;
+
+    // 1. Update Player Paddle (Left)
+    // Use Hand data if present, else Keyboard
+    let pInputY = paddleLeft.y;
+    let slapDetected = false;
+
+    if (handData.present) {
+        // Smooth follow
+        paddleLeft.y += (paddleLeft.targetY - paddleLeft.y) * 0.2;
+        
+        // Slap Detection
+        // Threshold logic: velocity > sensitivity * base
+        const velocityThresh = parseFloat(sensitivitySlider.value); 
+        // Check if velocity is positive (rightward) and high enough
+        if (handData.vx > velocityThresh && slapCooldown <= 0) {
+            slapDetected = true;
+            slapCooldown = 20; // Frames cooldown
+        }
+    } else {
+        // Keyboard Fallback
+        if (keys.ArrowUp) paddleLeft.y -= 8;
+        if (keys.ArrowDown) paddleLeft.y += 8;
+        if (keys.Space && slapCooldown <= 0) {
+            slapDetected = true;
+            slapCooldown = 20;
+        }
+    }
+    
+    // Clamp Paddle
+    paddleLeft.y = Math.max(60, Math.min(CANVAS_HEIGHT - 60, paddleLeft.y));
+    if (slapCooldown > 0) slapCooldown--;
+
+    // 2. Update AI Paddle (Right)
+    // AI tries to match ball Y, with some lag/error based on difficulty
+    let aiTarget = ball.y;
+    // Simple AI logic: only move if ball coming towards it
+    if (ball.vx > 0) {
+        paddleRight.y += (aiTarget - paddleRight.y) * AI_SPEED_BASE * (1 + scores.p1/20); // AI gets slightly faster
+    } else {
+        // Return to center
+        paddleRight.y += (CANVAS_HEIGHT/2 - paddleRight.y) * 0.02;
+    }
+    paddleRight.y = Math.max(60, Math.min(CANVAS_HEIGHT - 60, paddleRight.y));
+
+    // 3. Physics - Ball
+    ball.vz -= GRAVITY;
+    ball.z += ball.vz;
     ball.x += ball.vx;
     ball.y += ball.vy;
-    // update vertical movement
-    ball.vz += gravity * 0.25; // gravity pulls down (positive up)
-    ball.z += ball.vz;
 
-    // When ball hits table (z <= 0)
-    if (ball.z <= 0) {
-      ball.z = 0;
-      // bounce: invert vertical velocity with damping
-      ball.vz = -ball.vz * 0.68;
-      // add small random spin/vertical jitter
-      ball.vx *= 1.01;
-      // if bounce is tiny, flatten (stop bouncing)
-      if (Math.abs(ball.vz) < 1.2) {
-        ball.vz = 0;
-      }
+    // Floor Bounce
+    if (ball.z < TABLE_Z) {
+        ball.z = TABLE_Z;
+        ball.vz = -ball.vz * BOUNCE_DAMPING;
+        
+        // Stop bouncing if low energy
+        if (Math.abs(ball.vz) < 1.5) ball.vz = 0;
+        
+        if (Math.abs(ball.vz) > 1) playSound('bounce');
     }
 
-    // If ball goes beyond left side (player missed)
-    if (ball.x < -80) {
-      score.ai += 1;
-      updateScoreUI();
-      if (score.ai >= TARGET_SCORE) {
-        endGame(false);
-      } else {
-        resetBall(false);
-      }
-    }
-    // If ball goes beyond right side (ai missed)
-    if (ball.x > W + 80) {
-      score.player += 1;
-      updateScoreUI();
-      if (score.player >= TARGET_SCORE) {
-        endGame(true);
-      } else {
-        resetBall(true);
-      }
+    // Wall Collisions (Top/Bottom)
+    if (ball.y < 0 || ball.y > CANVAS_HEIGHT) {
+        ball.vy *= -1;
+        ball.y = Math.max(0, Math.min(CANVAS_HEIGHT, ball.y));
+        playSound('bounce');
     }
 
-    // Player hit logic: only possible when ball is near player x-range AND low (z small => near table)
-    const hittableRange = 160; // px horizontally
-    const slapThreshold = parseFloat(sensitivityEl.value) * 850; // tuned
-    const nearPlayerX = (ball.x - player.x) < hittableRange && (ball.x - player.x) > -40;
-    const nearPlayerY = (ball.y > player.y - 30) && (ball.y < player.y + player.h + 30);
-    const lowEnough = ball.z < 24; // only when ball is near table (small z)
-    const isSlap = palmVel.x > slapThreshold && lastPalm && Math.abs(palm.y - (player.y + player.h/2)) < player.h*0.8;
-    const autoHit = Math.abs(ball.vx) < 4; // auto-hit slow ball
+    // 4. Paddle Interactions
+    // Defines Hit Box
+    const paddleW = paddleLeft.w;
+    const paddleH = paddleLeft.h;
 
-    if (nearPlayerX && nearPlayerY && lowEnough && (isSlap || autoHit)) {
-      // apply hit: reflect ball to right, add boost based on slap
-      ball.x = player.x + player.w + ball.r + 6;
-      const slapBoost = isSlap ? Math.min(1.9, palmVel.x / (slapThreshold*1.2)) : 0.9;
-      ball.vx = Math.abs(ball.vx) * (1 + 0.25*slapBoost) + 5 * slapBoost;
-      // vertical (y) depends on hit spot
-      const rel = (ball.y - (player.y + player.h/2)) / (player.h/2);
-      ball.vy = rel * 6 + (Math.random()-0.5)*3;
-      // set upward arc
-      ball.vz = 6 * (0.9 + slapBoost*0.6);
-      // spin based on vertical palm vel
-      ball.spin = palmVel.y * 0.004;
-      // visual effect: tiny camera flash
-      spawnHitParticles(ball.x, ball.y, 'cyan');
+    // LEFT Paddle Hit (Player)
+    // Hit condition: 
+    // 1. X is near paddle
+    // 2. Y is within paddle height
+    // 3. Ball Z is low enough (hittable)
+    if (ball.x - ball.radius < paddleLeft.x + paddleW/2 && 
+        ball.x + ball.radius > paddleLeft.x - paddleW/2 &&
+        ball.z < 50) { // Ball must be low
+        
+        if (Math.abs(ball.y - paddleLeft.y) < paddleH/2 + ball.radius) {
+            // Determine hit strength
+            // If slapping, big boost. If just blocking, simple reflection.
+            if (slapDetected) {
+                ball.vx = Math.abs(ball.vx) + SLAP_BOOST_X;
+                ball.vx = Math.min(ball.vx, 25); // Cap speed
+                spawnParticles(ball.x, ball.y, COL_CYAN);
+                playSound('hit');
+            } else {
+                // Passive block
+                ball.vx = Math.abs(ball.vx) * 1.1 + 1; 
+                playSound('bounce');
+            }
+            
+            // Add spin/angle based on where it hit the paddle
+            let hitOffset = (ball.y - paddleLeft.y) / (paddleH/2);
+            ball.vy += hitOffset * 4; 
+            
+            // Ensure it moves right
+            if(ball.vx < 0) ball.vx *= -1;
+        }
     }
 
-    // AI hit logic - AI will return when ball is low near its paddle
-    const nearAI = (ai.x - ball.x) < hittableRange && (ai.x - ball.x) > -40;
-    if (nearAI && (ball.z < 30) && (ball.y > ai.y - 30) && (ball.y < ai.y + ai.h + 30)) {
-      ball.x = ai.x - ball.r - 6;
-      ball.vx = -Math.abs(ball.vx) * (1 + Math.random()*0.08);
-      const rel = (ball.y - (ai.y + ai.h/2)) / (ai.h/2);
-      ball.vy = rel * 6 + (Math.random()-0.5)*3;
-      ball.vz = 6 + Math.random()*3;
-      ball.spin = (Math.random()-0.5) * 0.02;
-      spawnHitParticles(ball.x, ball.y, 'pink');
+    // RIGHT Paddle Hit (AI)
+    if (ball.x + ball.radius > paddleRight.x - paddleW/2 &&
+        ball.x - ball.radius < paddleRight.x + paddleW/2 &&
+        ball.z < 50) {
+
+        if (Math.abs(ball.y - paddleRight.y) < paddleH/2 + ball.radius) {
+            ball.vx = -Math.abs(ball.vx) * 1.05 - 1; // AI returns slightly faster
+            ball.vx = Math.max(ball.vx, -25);
+            
+            let hitOffset = (ball.y - paddleRight.y) / (paddleH/2);
+            ball.vy += hitOffset * 4;
+            
+            spawnParticles(ball.x, ball.y, COL_PINK);
+            playSound('hit');
+        }
     }
 
-    // small speed clamp
-    ball.vx = Math.max(Math.min(ball.vx, 28), -28);
-    ball.vy = Math.max(Math.min(ball.vy, 16), -16);
-  }
+    // 5. Scoring
+    if (ball.x < -50) {
+        scores.p2++;
+        playSound('score');
+        document.getElementById('scoreP2').innerText = scores.p2;
+        resetBall('p1'); // Player serves
+        checkWin();
+    } else if (ball.x > CANVAS_WIDTH + 50) {
+        scores.p1++;
+        playSound('score');
+        document.getElementById('scoreP1').innerText = scores.p1;
+        resetBall('p2'); // AI serves
+        checkWin();
+    }
 
-  draw();
-  requestAnimationFrame(step);
+    // Update Particles
+    for(let i=particles.length-1; i>=0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        if(p.life <= 0) particles.splice(i, 1);
+    }
 }
 
-// Score UI
-function updateScoreUI(){
-  playerScoreEl.textContent = score.player;
-  aiScoreEl.textContent = score.ai;
+/*
+ * ------------------------------------------------------------------
+ * RENDERING
+ * ------------------------------------------------------------------
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Resize Canvas
+function resize() {
+    // Maintain aspect ratio logic if needed, or just fill
+    // Here we fix internal resolution but scale with CSS
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
 }
+window.addEventListener('resize', resize);
+resize();
 
-// End game
-function endGame(didWin) {
-  running = false;
-  // show overlay
-  endScreen.style.display = 'flex';
-  if (didWin) {
-    endTitle.textContent = 'YOU WON!';
-    endTitle.className = 'end-title glow-winner';
-    endSubtitle.textContent = `You reached ${TARGET_SCORE} — neon victory!`;
-  } else {
-    endTitle.textContent = 'YOU LOST';
-    endTitle.className = 'end-title glow-loser';
-    endSubtitle.textContent = `AI reached ${TARGET_SCORE}. Try again.`;
-  }
-}
-
-// Restart
-playAgain.onclick = () => {
-  endScreen.style.display = 'none';
-  score.player = 0; score.ai = 0;
-  updateScoreUI();
-  resetBall(true);
-  startGame();
-};
-closeBtn.onclick = () => { endScreen.style.display = 'none'; };
-
-// Drawing (neon table + shadows + ball scale)
-function draw() {
-  ctx.clearRect(0,0,W,H);
-  // background subtle vignette
-  const g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#02060b');
-  g.addColorStop(1,'#050b18');
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,W,H);
-
-  // draw neon grid floor (perspective)
-  drawNeonTable();
-
-  // draw net (thin neon)
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 2;
-  for (let y=tableHeight-220; y<tableHeight+260; y+=22) {
+function drawNeonRect(x, y, w, h, color, glowAmount=20) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = glowAmount;
+    ctx.shadowColor = color;
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    
     ctx.beginPath();
-    ctx.moveTo(W/2-1, y);
-    ctx.lineTo(W/2-1, y+12);
-    ctx.stroke();
-  }
-
-  // draw paddles (neon glow)
-  drawNeonPaddle(player, '#00f0ff');
-  drawNeonPaddle(ai, '#ff2dd7');
-
-  // compute ball screen size from z (higher => smaller)
-  const zFactor = 1 - Math.min(1, ball.z / 160);
-  const drawR = Math.max(6, ball.r * (0.9 + 0.9*zFactor));
-  // drop shadow under ball: depends on z
-  const shadowScale = 1 - Math.min(0.9, ball.z / 180);
-  ctx.beginPath();
-  ctx.ellipse(ball.x - Math.max(0, ball.spin*60), tableHeight + 6, drawR*1.1*shadowScale + 2, drawR*0.4*shadowScale + 1, 0, 0, Math.PI*2);
-  ctx.fillStyle = `rgba(0,0,0,${0.36 * shadowScale})`;
-  ctx.fill();
-
-  // ball glow + highlight
-  const bgrad = ctx.createRadialGradient(ball.x - drawR*0.2, ball.y - drawR*0.6 - ball.z*0.22, drawR*0.4, ball.x, ball.y - ball.z*0.2, drawR*1.2);
-  bgrad.addColorStop(0, 'rgba(255,255,255,0.98)');
-  bgrad.addColorStop(0.08, 'rgba(255,255,255,0.9)');
-  bgrad.addColorStop(0.2, 'rgba(220,240,255,0.9)');
-  bgrad.addColorStop(1, 'rgba(160,240,255,0.02)');
-  ctx.beginPath();
-  ctx.fillStyle = bgrad;
-  ctx.arc(ball.x, ball.y - ball.z*0.6, drawR, 0, Math.PI*2);
-  ctx.fill();
-
-  // center HUD
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(12, H-58, 300, 44);
-  ctx.fillStyle = '#e8fbff';
-  ctx.font = '14px system-ui';
-  ctx.textAlign = 'left';
-  ctx.fillText('Move hand up/down to control paddle. Slap to hit when ball is low.', 20, H-30);
-}
-
-// Draw neon paddle with glow
-function drawNeonPaddle(p, color) {
-  // outer glow
-  ctx.save();
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 40;
-  ctx.fillStyle = color;
-  roundRect(ctx, p.x, p.y, p.w, p.h, 12, true);
-  ctx.restore();
-
-  // inner glossy line
-  ctx.beginPath();
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(p.x + 6, p.y + 10, p.w - 12, p.h - 20);
-}
-
-// table perspective grid
-function drawNeonTable() {
-  // table base rectangle with gradient to simulate depth
-  const tableTop = tableHeight;
-  const tblGrad = ctx.createLinearGradient(0, tableTop-80, 0, H);
-  tblGrad.addColorStop(0,'rgba(0,20,30,0.28)');
-  tblGrad.addColorStop(1,'rgba(0,6,10,0.8)');
-  ctx.fillStyle = tblGrad;
-  // perspective polygon
-  ctx.beginPath();
-  ctx.moveTo(80, tableTop - 20);
-  ctx.lineTo(W-80, tableTop - 20);
-  ctx.lineTo(W, H);
-  ctx.lineTo(0, H);
-  ctx.closePath();
-  ctx.fill();
-
-  // neon grid lines (converging)
-  ctx.strokeStyle = 'rgba(0,240,255,0.06)';
-  ctx.lineWidth = 1;
-  for (let i=0;i<26;i++){
-    const t = i/25;
-    const x = 80 + (W-160)*t;
-    ctx.beginPath();
-    ctx.moveTo(x, tableTop - 20);
-    ctx.lineTo(W/2 + (x - W/2)*2.4, H);
-    ctx.stroke();
-  }
-
-  // center neon stripe
-  ctx.strokeStyle = 'rgba(0,240,255,0.06)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(W/2, tableTop-20);
-  ctx.lineTo(W/2, H);
-  ctx.stroke();
-}
-
-// Utility round rect
-function roundRect(ctx, x, y, w, h, r, fill) {
-  ctx.beginPath();
-  ctx.moveTo(x+r, y);
-  ctx.arcTo(x+w, y, x+w, y+h, r);
-  ctx.arcTo(x+w, y+h, x, y+h, r);
-  ctx.arcTo(x, y+h, x, y, r);
-  ctx.arcTo(x, y, x+w, y, r);
-  ctx.closePath();
-  if (fill) ctx.fill();
-  else ctx.stroke();
-}
-
-// Simple particle system for hit effects
-const particles = [];
-function spawnHitParticles(x,y,color){
-  for (let i=0;i<12;i++){
-    particles.push({
-      x:x + (Math.random()-0.5)*18,
-      y:y + (Math.random()-0.5)*12,
-      vx:(Math.random()-0.5)*6,
-      vy:(Math.random()-0.6)*4,
-      life: 28 + Math.random()*24,
-      c: color
-    });
-  }
-}
-function drawParticles(){
-  for (let i = particles.length-1; i>=0; i--){
-    const p = particles[i];
-    p.x += p.vx; p.y += p.vy; p.life--;
-    ctx.globalAlpha = Math.max(0, p.life/40);
-    ctx.fillStyle = p.c === 'cyan'? 'rgba(0,240,255,0.88)':'rgba(255,45,215,0.88)';
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
+    ctx.rect(x - w/2, y - h/2, w, h);
     ctx.fill();
-    ctx.globalAlpha = 1;
-    if (p.life<=0) particles.splice(i,1);
-  }
+    ctx.stroke();
+    
+    // Inner highlight
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.2;
+    ctx.fill();
+    ctx.restore();
 }
 
-// Integrate particles draw into main draw call
-const origDraw = draw;
-draw = function() {
-  origDraw();
-  drawParticles();
-};
-
-// Controls
-startBtn.onclick = async () => {
-  if (!running) {
-    try {
-      await camera.start();
-      running = true;
-      startBtn.textContent = 'Pause';
-      resetBall(true);
-    } catch (e) {
-      alert('Camera start failed. Allow camera and reload the page. Error: '+e.message);
-      console.error(e);
-      return;
+function drawPerspectiveGrid() {
+    ctx.save();
+    ctx.strokeStyle = '#1f1f30'; // faint
+    ctx.lineWidth = 1;
+    
+    // Horizontal lines (perspective)
+    // Not true 3D projection for grid, just artistic
+    for(let i=0; i<CANVAS_HEIGHT; i+=40) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(CANVAS_WIDTH, i);
+        ctx.stroke();
     }
-  } else {
-    camera.stop();
-    running = false;
-    startBtn.textContent = 'Start Game';
-  }
-};
+    // Vertical lines
+    for(let i=0; i<CANVAS_WIDTH; i+=40) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, CANVAS_HEIGHT);
+        ctx.stroke();
+    }
+    
+    // Center Net
+    ctx.strokeStyle = COL_CYAN;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_WIDTH/2, 0);
+    ctx.lineTo(CANVAS_WIDTH/2, CANVAS_HEIGHT);
+    ctx.stroke();
+    ctx.restore();
+}
 
-resetBtn.onclick = () => {
-  score.player = 0; score.ai = 0;
-  updateScoreUI();
-  resetBall(true);
-};
+function draw() {
+    // Clear
+    ctx.fillStyle = '#0a0a10'; // Matches CSS bg
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-// boot
-resetBall(true);
-requestAnimationFrame(step);
+    drawPerspectiveGrid();
 
-// attempt to warm the video element
-(async function tryInitCamera(){
-  try { await video.play().catch(()=>{}); } catch(e){}
-})();
+    // Draw Particles
+    particles.forEach(p => {
+        ctx.save();
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+    });
+
+    // Draw Paddles
+    drawNeonRect(paddleLeft.x, paddleLeft.y, paddleLeft.w, paddleLeft.h, COL_CYAN);
+    drawNeonRect(paddleRight.x, paddleRight.y, paddleRight.w, paddleRight.h, COL_PINK);
+
+    // Draw Ball (Faux 3D)
+    // 1. Shadow (based on Z height)
+    ctx.save();
+    let shadowScale = 1 - Math.min(ball.z / 300, 0.8);
+    let shadowAlpha = 0.5 * shadowScale;
+    ctx.translate(ball.x, ball.y); // Shadow is on the floor at x,y
+    ctx.scale(1, 0.3); // Flattened circle
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * 1.5, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(0, 240, 255, ${shadowAlpha})`;
+    ctx.fill();
+    ctx.restore();
+
+    // 2. Ball Body (Shifted up by Z)
+    // Scale makes it look closer/further. High Z = Closer to camera (technically up)
+    // In this top-down/isometric view, Z is just vertical offset.
+    // Let's make Z affect scale slightly for "pop"
+    let visualScale = 1 + ball.z * 0.002; 
+    let visualY = ball.y - ball.z;
+    
+    ctx.save();
+    ctx.translate(ball.x, visualY);
+    ctx.scale(visualScale, visualScale);
+    
+    // Glow
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = COL_CYAN;
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius, 0, Math.PI*2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    
+    // Inner tint
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+function loop() {
+    requestAnimationFrame(loop);
+    update();
+    draw();
+}
+
+/*
+ * ------------------------------------------------------------------
+ * INITIALIZATION
+ * ------------------------------------------------------------------
+ */
+const startBtn = document.getElementById('btn-start');
+const loadingMsg = document.getElementById('loading-msg');
+const startScreen = document.getElementById('start-screen');
+const restartBtn = document.getElementById('btn-restart');
+const debugBtn = document.getElementById('btn-debug');
+
+// Enable start button only after camera logic loads (basic check)
+// In reality, we just wait a moment or wait for user permission flow
+setTimeout(() => {
+    startBtn.innerText = "START GAME";
+    startBtn.disabled = false;
+    startBtn.classList.add('btn-pink'); // Highlight
+    loadingMsg.style.display = 'none';
+}, 2000);
+
+startBtn.addEventListener('click', async () => {
+    // Init Audio
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Start Camera
+    loadingMsg.style.display = 'block';
+    loadingMsg.innerText = "Starting Camera...";
+    
+    try {
+        await camera.start();
+        startScreen.classList.add('hidden');
+        gameState = STATE.PLAYING;
+        resetBall();
+    } catch (e) {
+        alert("Camera failed to start. You can still play with Keyboard (Arrow keys + Space).");
+        startScreen.classList.add('hidden');
+        gameState = STATE.PLAYING;
+        resetBall();
+    }
+});
+
+restartBtn.addEventListener('click', () => {
+    scores.p1 = 0;
+    scores.p2 = 0;
+    document.getElementById('scoreP1').innerText = '0';
+    document.getElementById('scoreP2').innerText = '0';
+    document.getElementById('end-screen').classList.add('hidden');
+    gameState = STATE.PLAYING;
+    resetBall();
+});
+
+debugBtn.addEventListener('click', () => {
+    const d = document.getElementById('debug-info');
+    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+});
+
+// Start Loop
+resize();
+loop();
 
 </script>
 </body>
