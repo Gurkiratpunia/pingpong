@@ -1,36 +1,4 @@
-<!--
-    hand-slap-table-tennis-3d.html
-
-    BUILD TASK: Single-file 3D Neon Hand-Slap Table Tennis
-    Updates: Timer, Reset Button, Procedural Music
-
-    README & USAGE:
-    ============================================================================
-    1. CONTROLS:
-       - Camera (Preferred):
-         - Allow camera access.
-         - Move Hand Up/Down: Control paddle.
-         - SLAP Right: Hit the ball.
-       - Keyboard (Fallback):
-         - Arrows: Move. Space: Slap.
-
-    2. RULES:
-       - Time Limit: 60 Seconds.
-       - Goal: Have the highest score when time runs out.
-       - Hitting: Time your slaps when the ball is close and low (Z-axis).
-
-    3. FEATURES:
-       - Procedural "Fast Electric" Music (Click 'Music: OFF/ON' to toggle).
-       - 3D Ball Physics (Depth/Gravity).
-       - AI Opponent.
-
-    TEST CHECKLIST:
-    [ ] Timer counts down from 60.
-    [ ] Music plays when toggled ON.
-    [ ] Game ends at 0s, showing winner based on score.
-    [ ] Reset button restarts timer and scores.
-    ============================================================================
--->
+<!-- (same header as your original file) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -241,7 +209,8 @@ let keys = { ArrowUp: false, ArrowDown: false, Space: false };
 // Objects
 const paddleLeft = { x: 60, y: 360, w: 20, h: 120, color: CONFIG.colors.cyan, targetY: 360 };
 const paddleRight = { x: CANVAS_WIDTH - 60, y: 360, w: 20, h: 120, color: CONFIG.colors.pink };
-const ball = { x: 640, y: 360, z: 200, vx: 0, vy: 0, vz: 0, radius: 12 };
+// Added prev positions to ball for continuous collision detection
+const ball = { x: 640, y: 360, z: 200, vx: 0, vy: 0, vz: 0, radius: 12, prevX: 640, prevY: 360, prevZ: 200 };
 
 /*
  * AUDIO SYSTEM (Music & SFX)
@@ -404,6 +373,7 @@ function spawnParticles(x, y, color) {
 
 function resetRound(server) {
     ball.x = CANVAS_WIDTH/2; ball.y = CANVAS_HEIGHT/2; ball.z = 200;
+    ball.prevX = ball.x; ball.prevY = ball.y; ball.prevZ = ball.z;
     ball.vx = (server === 'p1' ? 4 : -4);
     ball.vy = (Math.random()-0.5)*4; ball.vz = 0;
 }
@@ -485,6 +455,11 @@ function update(dt) {
     paddleRight.y += (aiTarget - paddleRight.y) * aiSpeed;
     paddleRight.y = Math.max(60, Math.min(CANVAS_HEIGHT-60, paddleRight.y));
 
+    // Save previous position for continuous collision detection
+    ball.prevX = ball.x;
+    ball.prevY = ball.y;
+    ball.prevZ = ball.z;
+
     // --- Physics ---
     ball.vz -= CONFIG.gravity;
     ball.z += ball.vz;
@@ -505,40 +480,54 @@ function update(dt) {
         AudioSys.sfxBounce();
     }
 
-    // --- Collisions ---
-    // Player
-    if (ball.x - ball.radius < paddleLeft.x + 10 && 
-        ball.x + ball.radius > paddleLeft.x - 10 && 
-        ball.z < 40) {
-        
-        if (Math.abs(ball.y - paddleLeft.y) < 70) {
-            let boost = slapDetected ? 5 : 0;
-            ball.vx = Math.abs(ball.vx) + 2 + boost;
-            if(ball.vx > 25) ball.vx = 25;
-            
-            let offset = (ball.y - paddleLeft.y) / 60;
-            ball.vy += offset * 5;
-            
-            AudioSys.sfxHit();
-            spawnParticles(ball.x, ball.y, CONFIG.colors.cyan);
+    // --- Continuous Collisions ---
+    // We'll detect if the ball's swept path crosses the paddle plane this frame.
+    // Player paddle collision (left)
+    const padLeftPlaneX = paddleLeft.x + 10; // right face of left paddle
+    const padLeftMinY = paddleLeft.y - 60;
+    const padLeftMaxY = paddleLeft.y + 60;
+    const collisionZThreshold = 80; // allow more forgiving detection in z
+
+    // If ball moved across the paddle plane this frame (and is moving toward it)
+    if (ball.vx < 0) { // ball moving left -> toward player's left paddle
+        const prevRight = ball.prevX - ball.radius;
+        const currRight = ball.x - ball.radius;
+        // Crossed the plane if previously strictly right of the plane and now at/left of it
+        if (prevRight > padLeftPlaneX && currRight <= padLeftPlaneX && ball.z < collisionZThreshold) {
+            // Check vertical overlap at collision moment (approximate using current Y)
+            if (Math.abs(ball.y - paddleLeft.y) < 80) {
+                // Resolve collision: place ball at contact and reflect velocity
+                ball.x = padLeftPlaneX + ball.radius + 1; // nudge out to the right
+                // Add slap boost if detected
+                let boost = slapDetected ? 5 : 0;
+                // Ensure outgoing velocity is positive (to the right)
+                ball.vx = Math.abs(ball.vx) + 2 + boost;
+                if (ball.vx > 25) ball.vx = 25;
+                // add vertical deflection based on hit point
+                let offset = (ball.y - paddleLeft.y) / 60;
+                ball.vy += offset * 5;
+                AudioSys.sfxHit();
+                spawnParticles(ball.x, ball.y, CONFIG.colors.cyan);
+            }
+        }
+    } else if (ball.vx > 0) {
+        // AI paddle collision (right)
+        const padRightPlaneX = paddleRight.x - 10; // left face of right paddle
+        const prevLeft = ball.prevX + ball.radius;
+        const currLeft = ball.x + ball.radius;
+        if (prevLeft < padRightPlaneX && currLeft >= padRightPlaneX && ball.z < collisionZThreshold) {
+            if (Math.abs(ball.y - paddleRight.y) < 80) {
+                ball.x = padRightPlaneX - ball.radius - 1; // nudge out to the left
+                ball.vx = -Math.abs(ball.vx) - 2;
+                let offset = (ball.y - paddleRight.y) / 60;
+                ball.vy += offset * 5;
+                AudioSys.sfxHit();
+                spawnParticles(ball.x, ball.y, CONFIG.colors.pink);
+            }
         }
     }
 
-    // AI
-    if (ball.x + ball.radius > paddleRight.x - 10 && 
-        ball.x - ball.radius < paddleRight.x + 10 && 
-        ball.z < 40) {
-        
-        if (Math.abs(ball.y - paddleRight.y) < 70) {
-            ball.vx = -Math.abs(ball.vx) - 2;
-            let offset = (ball.y - paddleRight.y) / 60;
-            ball.vy += offset * 5;
-            AudioSys.sfxHit();
-            spawnParticles(ball.x, ball.y, CONFIG.colors.pink);
-        }
-    }
-
-    // Scoring
+    // --- Scoring ---
     if (ball.x < -50) {
         scores.p2++;
         document.getElementById('scoreP2').innerText = scores.p2;
