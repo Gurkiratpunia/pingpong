@@ -1,11 +1,9 @@
-<!-- (same header as your original file) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neon Hand-Slap Table Tennis 3D</title>
-    <!-- MediaPipe Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -139,7 +137,6 @@
     <canvas id="gameCanvas"></canvas>
     <video id="camera-preview" playsinline muted></video>
 
-    <!-- UI -->
     <div class="ui-layer">
         <div class="top-bar">
             <div class="game-stats">
@@ -162,7 +159,6 @@
         </div>
     </div>
 
-    <!-- Start Screen -->
     <div id="start-screen" class="modal-overlay">
         <h1>Neon Slap<br>Tennis 3D</h1>
         <h2>1 Minute Timer • Highest Score Wins</h2>
@@ -170,7 +166,6 @@
         <p style="margin-top:20px; color: var(--neon-pink);" id="loading-msg">Initializing...</p>
     </div>
 
-    <!-- End Screen -->
     <div id="end-screen" class="modal-overlay hidden">
         <div id="end-title" class="result-msg">GAME OVER</div>
         <h2 id="end-subtitle">Score: 0 - 0</h2>
@@ -179,8 +174,7 @@
 </div>
 
 <script>
-/* 
- * CONFIGURATION 
+/* * CONFIGURATION 
  */
 const CONFIG = {
     targetTime: 60, // Seconds
@@ -480,47 +474,58 @@ function update(dt) {
         AudioSys.sfxBounce();
     }
 
-    // --- Continuous Collisions ---
-    // We'll detect if the ball's swept path crosses the paddle plane this frame.
-    // Player paddle collision (left)
+    // --- Continuous Collisions (FIXED) ---
+    // Increased Z threshold to make hitting easier
+    const collisionZThreshold = 100; 
     const padLeftPlaneX = paddleLeft.x + 10; // right face of left paddle
-    const padLeftMinY = paddleLeft.y - 60;
-    const padLeftMaxY = paddleLeft.y + 60;
-    const collisionZThreshold = 80; // allow more forgiving detection in z
+    const padRightPlaneX = paddleRight.x - 10; // left face of right paddle
 
-    // If ball moved across the paddle plane this frame (and is moving toward it)
-    if (ball.vx < 0) { // ball moving left -> toward player's left paddle
+    if (ball.vx < 0) { // Moving Left
         const prevRight = ball.prevX - ball.radius;
         const currRight = ball.x - ball.radius;
-        // Crossed the plane if previously strictly right of the plane and now at/left of it
-        if (prevRight > padLeftPlaneX && currRight <= padLeftPlaneX && ball.z < collisionZThreshold) {
-            // Check vertical overlap at collision moment (approximate using current Y)
+        
+        // FIX: Check both "Did I cross it?" AND "Am I stuck inside it?"
+        // This prevents tunneling if the ball skips a frame or gets stuck
+        const crossedPlane = (prevRight > padLeftPlaneX && currRight <= padLeftPlaneX);
+        const insidePaddle = (currRight <= padLeftPlaneX && ball.x > paddleLeft.x - 10);
+
+        if ((crossedPlane || insidePaddle) && ball.z < collisionZThreshold) {
             if (Math.abs(ball.y - paddleLeft.y) < 80) {
-                // Resolve collision: place ball at contact and reflect velocity
-                ball.x = padLeftPlaneX + ball.radius + 1; // nudge out to the right
-                // Add slap boost if detected
+                // Resolve: Snap out
+                ball.x = padLeftPlaneX + ball.radius + 1;
+                
+                // Boost
                 let boost = slapDetected ? 5 : 0;
-                // Ensure outgoing velocity is positive (to the right)
                 ball.vx = Math.abs(ball.vx) + 2 + boost;
                 if (ball.vx > 25) ball.vx = 25;
-                // add vertical deflection based on hit point
+                
+                // Deflect
                 let offset = (ball.y - paddleLeft.y) / 60;
                 ball.vy += offset * 5;
+                
                 AudioSys.sfxHit();
                 spawnParticles(ball.x, ball.y, CONFIG.colors.cyan);
             }
         }
-    } else if (ball.vx > 0) {
-        // AI paddle collision (right)
-        const padRightPlaneX = paddleRight.x - 10; // left face of right paddle
+    } else if (ball.vx > 0) { // Moving Right
         const prevLeft = ball.prevX + ball.radius;
         const currLeft = ball.x + ball.radius;
-        if (prevLeft < padRightPlaneX && currLeft >= padRightPlaneX && ball.z < collisionZThreshold) {
+
+        // FIX: Same robust check for AI paddle
+        const crossedPlane = (prevLeft < padRightPlaneX && currLeft >= padRightPlaneX);
+        const insidePaddle = (currLeft >= padRightPlaneX && ball.x < paddleRight.x + 10);
+
+        if ((crossedPlane || insidePaddle) && ball.z < collisionZThreshold) {
             if (Math.abs(ball.y - paddleRight.y) < 80) {
-                ball.x = padRightPlaneX - ball.radius - 1; // nudge out to the left
+                // Resolve: Snap out
+                ball.x = padRightPlaneX - ball.radius - 1;
+                
                 ball.vx = -Math.abs(ball.vx) - 2;
+                
+                // Deflect
                 let offset = (ball.y - paddleRight.y) / 60;
                 ball.vy += offset * 5;
+                
                 AudioSys.sfxHit();
                 spawnParticles(ball.x, ball.y, CONFIG.colors.pink);
             }
@@ -597,8 +602,7 @@ function draw() {
     ctx.shadowBlur = 0;
 }
 
-/* 
- * LOOP & EVENTS 
+/* * LOOP & EVENTS 
  */
 function loop(now) {
     requestAnimationFrame(loop);
